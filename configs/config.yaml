@@ -1,0 +1,43 @@
+# configs/config.yaml
+
+# --- General Experiment Settings ---
+simulation_name: "RansomLog_SmolLM135M_LoRA_R8"
+dataset_name: "ransomlog"  # 'ransomlog' or 'hdfs'
+description: "First experiment with RansomLog dataset using SmolLM-135M and LoRA rank 8."
+
+# --- Paths ---
+# All paths are relative to the project root
+data_base_path: "./data/"
+results_path: "./results/"
+
+# --- Data Processing Settings ---
+# These settings are specific to the dataset being used
+# For RansomLog, you might define session_type: 'time_window' or 'process_id'
+# and window_size: '5m'
+session_window_spliter: " ;-; "
+force_reprocess_data: False # If True, will re-run the data processing steps
+
+# --- Model Settings ---
+model_name: "HuggingFaceTB/SmolLM-135M"
+lora: True
+lora_rank: 8
+lora_alpha_multiplier: 2 # lora_alpha will be lora_rank * multiplier
+lora_dropout: 0.1
+
+# --- Federated Learning Settings ---
+num_rounds: 50
+num_clients: 50
+client_frac: 0.1 # Fraction of clients to select each round
+
+# --- Client Training Settings ---
+max_steps: 10
+batch_size: 32
+initial_lr: 0.001
+min_lr: 0.00001
+lr_scheduler_type: 'cosine' # or 'constant'
+
+# --- Evaluation Settings ---
+# The k values for top-k accuracy calculation
+top_k_values: [1, 3, 5, 10]
+# The number of thresholds to test when finding the best F1 score
+f1_threshold_steps: 1000

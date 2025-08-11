@@ -2,6 +2,7 @@ import yaml
 import argparse
 import os
 from src.data_processing.ransomlog_processor import RansomLogProcessor
+from src.data_processing.hdfs_processor import HDFSProcessor
 from src.federated_learning.server import FederatedServer
 from src.evaluation.evaluator import Evaluator
 
@@ -25,9 +26,8 @@ def main(config_path):
     print("\n--- Initializing Data Processing ---")
     if config['dataset_name'] == 'ransomlog':
         processor = RansomLogProcessor(config)
-    # elif config['dataset_name'] == 'hdfs':
-    #     # processor = HDFSProcessor(config) # You can implement this later
-    #     pass
+    elif config['dataset_name'] == 'hdfs':
+        processor = HDFSProcessor(config)
     else:
         raise ValueError(f"Dataset '{config['dataset_name']}' not supported in the current implementation.")
     

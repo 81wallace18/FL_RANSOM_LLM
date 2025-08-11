@@ -2,8 +2,8 @@ import yaml
 import argparse
 import os
 from src.data_processing.ransomlog_processor import RansomLogProcessor
-# from src.federated_learning.server import FederatedServer
-# from src.evaluation.evaluator import Evaluator
+from src.federated_learning.server import FederatedServer
+from src.evaluation.evaluator import Evaluator
 
 def main(config_path):
     """
@@ -33,17 +33,17 @@ def main(config_path):
     
     processor.run()
 
-    # 3. Execute Federated Training (To be implemented)
-    # print("\n--- Starting Federated Training ---")
-    # server = FederatedServer(config)
-    # server.run_federated_training()
-    # print("--- Federated Training Complete ---")
+    # 3. Execute Federated Training
+    print("\n--- Starting Federated Training ---")
+    server = FederatedServer(config)
+    server.run_federated_training()
+    print("--- Federated Training Complete ---")
 
-    # 4. Execute Evaluation (To be implemented)
-    # print("\n--- Starting Evaluation ---")
-    # evaluator = Evaluator(config)
-    # evaluator.evaluate()
-    # print("--- Evaluation Complete ---")
+    # 4. Execute Evaluation
+    print("\n--- Starting Evaluation ---")
+    evaluator = Evaluator(config)
+    evaluator.evaluate()
+    print("--- Evaluation Complete ---")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run Federated Learning for Anomaly Detection.")

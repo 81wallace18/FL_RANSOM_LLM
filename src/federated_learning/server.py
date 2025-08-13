@@ -14,7 +14,9 @@ class FederatedServer:
     """
     def __init__(self, config):
         self.config = config
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.global_model, self.tokenizer = initialize_global_model(config)
+        self.global_model.to(self.device)
 
     def _split_data_for_clients(self):
         """
@@ -73,28 +75,35 @@ class FederatedServer:
         """Updates the model with aggregated LoRA adapter weights."""
         for name, param in model.named_parameters():
             if name in aggregated_adapters:
-                param.data.copy_(aggregated_adapters[name])
+                param.data.copy_(aggregated_adapters[name].to(self.device))
 
-    def _aggregate_models(self, client_models):
-        """Aggregates client models using Federated Averaging (FedAvg)."""
+    def _aggregate_models(self, client_weights_list):
+        """
+        Aggregates client model weights (adapters or full) using FedAvg.
+        The aggregation is done on the CPU.
+        """
+        # The keys are the same for all clients, so we can take them from the first one.
+        if not client_weights_list:
+            print("Warning: Client weights list is empty. Skipping aggregation.")
+            return
+
+        aggregated_weights = {}
+        weight_keys = client_weights_list[0].keys()
+
+        for key in weight_keys:
+            # Stack all tensors for the current key from all clients and average them.
+            # The tensors are on the CPU, so this uses RAM, not VRAM.
+            aggregated_weights[key] = torch.mean(
+                torch.stack([weights[key] for weights in client_weights_list]), dim=0
+            )
+
         if self.config['lora']:
-            all_adapters = [self._get_adapters(model) for model in client_models]
-            aggregated_adapters = {}
-            
-            for key in all_adapters[0].keys():
-                aggregated_adapters[key] = torch.mean(
-                    torch.stack([adapters[key] for adapters in all_adapters]), dim=0
-                )
-            
-            self._set_adapters(self.global_model, aggregated_adapters)
+            self._set_adapters(self.global_model, aggregated_weights)
         else:
-            # Aggregate the entire model (full fine-tuning)
-            global_state_dict = self.global_model.state_dict()
-            for key in global_state_dict.keys():
-                global_state_dict[key] = torch.mean(
-                    torch.stack([model.state_dict()[key].data for model in client_models]), dim=0
-                )
-            self.global_model.load_state_dict(global_state_dict)
+            # For full fine-tuning, update the entire model state dict
+            # Move weights to GPU before loading them into the model
+            gpu_aggregated_weights = {k: v.to(self.device) for k, v in aggregated_weights.items()}
+            self.global_model.load_state_dict(gpu_aggregated_weights)
 
     def run_federated_training(self):
         """The main federated training loop."""
@@ -110,17 +119,18 @@ class FederatedServer:
             selected_clients_ids = random.sample(range(self.config['num_clients']), num_selected_clients)
             print(f"Clients selected for this round: {selected_clients_ids}")
 
-            # Train clients in parallel (conceptually)
-            client_models = []
+            # Train clients and collect their weights (on CPU)
+            client_weights_list = []
             current_lr = self._get_learning_rate(round_num)
             for client_id in selected_clients_ids:
                 client_trainer = ClientTrainer(client_id, self.config)
-                client_model = client_trainer.train(round_num, current_lr)
-                client_models.append(client_model)
+                # train() now returns a dictionary of weights on the CPU
+                cpu_weights = client_trainer.train(round_num, current_lr)
+                client_weights_list.append(cpu_weights)
             
-            # Aggregate models
+            # Aggregate models on the CPU
             print("Aggregating client models...")
-            self._aggregate_models(client_models)
+            self._aggregate_models(client_weights_list)
             
             # Save new global model
             round_model_path = os.path.join(

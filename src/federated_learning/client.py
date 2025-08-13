@@ -114,18 +114,21 @@ class ClientTrainer:
         trainer.train()
         print(f"--- Client {self.client_id} training complete. ---")
 
-        # 5. Save client-specific results (optional, but good for debugging)
-        output_dir = os.path.join(
-            self.config['results_path'],
-            self.config['simulation_name'],
-            f'round_{round_num}',
-            f'client_{self.client_id}'
-        )
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Save training loss if needed
-        # train_loss = trainer.state.log_history[-1]['loss']
-        # with open(os.path.join(output_dir, "training_loss.json"), "w") as f:
-        #     json.dump({'loss': train_loss}, f)
+        # 5. Extract LoRA adapters to CPU and return them
+        # This prevents VRAM overflow on the server by not returning the whole model.
+        if self.use_lora:
+            cpu_adapters = {
+                name: param.to('cpu')
+                for name, param in model.state_dict().items()
+                if "lora_" in name
+            }
+        else:
+            # For full fine-tuning, return the entire state dict on CPU
+            cpu_adapters = {name: param.to('cpu') for name, param in model.state_dict().items()}
 
-        return model
+        # Explicitly free up VRAM
+        del model
+        del trainer
+        torch.cuda.empty_cache()
+
+        return cpu_adapters

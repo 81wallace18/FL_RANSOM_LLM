@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+data/hdfs/processed/*
+data/hdfs/raw/*
+data/ransomlog/processed/*
+data/ransomlog/raw/*  
+results/

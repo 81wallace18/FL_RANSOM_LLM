@@ -61,8 +61,12 @@ class Evaluator:
         model.to(self.device)
         model.eval()
 
+        total_texts = len(self.test_content)
         with torch.no_grad():
-            for text in self.test_content:
+            for i, text in enumerate(self.test_content):
+                if (i + 1) % 100 == 0:
+                    print(f"\r  Calculating accuracy (Antigo Method)... {i + 1}/{total_texts}", end="")
+
                 inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=1024)
                 inputs = {key: val.to(self.device) for key, val in inputs.items()}
                 

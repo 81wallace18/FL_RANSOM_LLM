@@ -42,8 +42,9 @@ class ClientTrainer:
 
         if 'bert' in self.model_name.lower():
             if self.use_lora:
-                model = AutoModelForMaskedLM.from_pretrained(self.model_name)
-                model = PeftModel.from_pretrained(model, model_path, is_trainable=True)
+                device_map = {'': f'cuda:{self.gpu_id}'} if torch.cuda.is_available() else "auto"
+                model = AutoModelForMaskedLM.from_pretrained(self.model_name, device_map=device_map)
+                model = PeftModel.from_pretrained(model, model_path, is_trainable=True, device_map=device_map)
             else:
                 model = AutoModelForMaskedLM.from_pretrained(model_path)
         else:
@@ -56,7 +57,7 @@ class ClientTrainer:
                     device_map=device_map,
                     **{k: v for k, v in quantization_config.items() if k != 'bnb_4bit_compute_dtype'}
                 )
-                model = PeftModel.from_pretrained(model, model_path, is_trainable=True)
+                model = PeftModel.from_pretrained(model, model_path, is_trainable=True, device_map=device_map)
             else:
                 model = AutoModelForCausalLM.from_pretrained(model_path)
         

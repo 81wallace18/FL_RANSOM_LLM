@@ -47,10 +47,13 @@ class ClientTrainer:
                 model = AutoModelForMaskedLM.from_pretrained(model_path)
         else:
             if self.use_lora:
+                # device_map={'': torch.cuda.current_device()} ensures the model is loaded directly
+                # onto the GPU assigned to this process, which is required for quantized models.
+                device_map = {'': torch.cuda.current_device()} if torch.cuda.is_available() else "auto"
                 model = AutoModelForCausalLM.from_pretrained(
                     self.model_name,
                     torch_dtype=torch.float16,
-                    device_map="auto", # Adicionado para carregar o modelo quantizado diretamente na GPU correta
+                    device_map=device_map,
                     **{k: v for k, v in quantization_config.items() if k != 'bnb_4bit_compute_dtype'}
                 )
                 model = PeftModel.from_pretrained(model, model_path, is_trainable=True)

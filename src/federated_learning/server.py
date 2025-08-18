@@ -3,9 +3,26 @@ import random
 import math
 import torch
 from datasets import load_from_disk
+import concurrent.futures
 
 from src.models.model_loader import initialize_global_model
 from .client import ClientTrainer
+
+def train_client_process(args):
+    """
+    Função wrapper para treinar um cliente em um processo separado.
+    Isso é necessário para o paralelismo com ProcessPoolExecutor.
+    """
+    client_id, config, round_num, learning_rate, gpu_id = args
+    
+    # Define qual GPU este processo deve usar
+    if torch.cuda.is_available():
+        torch.cuda.set_device(gpu_id)
+    
+    print(f"Iniciando treinamento para o cliente {client_id} na GPU {gpu_id}")
+    client_trainer = ClientTrainer(client_id, config)
+    cpu_weights = client_trainer.train(round_num, learning_rate)
+    return cpu_weights
 
 class FederatedServer:
     """
@@ -110,6 +127,13 @@ class FederatedServer:
         # 1. Setup: Split data for clients
         self._split_data_for_clients()
 
+        # Identifica o número de GPUs disponíveis
+        num_gpus = torch.cuda.device_count()
+        if num_gpus == 0:
+            print("AVISO: Nenhuma GPU encontrada. Rodando em CPU (pode ser muito lento).")
+        else:
+            print(f"Encontradas {num_gpus} GPUs. Distribuindo clientes entre elas.")
+
         # 2. Training Loop
         for round_num in range(1, self.config['num_rounds'] + 1):
             print(f"\n===== Starting Round {round_num}/{self.config['num_rounds']} =====")
@@ -119,15 +143,34 @@ class FederatedServer:
             selected_clients_ids = random.sample(range(self.config['num_clients']), num_selected_clients)
             print(f"Clients selected for this round: {selected_clients_ids}")
 
-            # Train clients and collect their weights (on CPU)
             client_weights_list = []
             current_lr = self._get_learning_rate(round_num)
-            for client_id in selected_clients_ids:
-                client_trainer = ClientTrainer(client_id, self.config)
-                # train() now returns a dictionary of weights on the CPU
-                cpu_weights = client_trainer.train(round_num, current_lr)
-                client_weights_list.append(cpu_weights)
-            
+
+            # Se não houver GPUs, volte para o modo sequencial
+            if num_gpus == 0:
+                for client_id in selected_clients_ids:
+                    # Se não houver GPU, o ID da GPU é -1 (indicando CPU)
+                    args = (client_id, self.config, round_num, current_lr, -1)
+                    cpu_weights = train_client_process(args)
+                    client_weights_list.append(cpu_weights)
+            else:
+                # Use ProcessPoolExecutor para treinar clientes em paralelo nas GPUs
+                with concurrent.futures.ProcessPoolExecutor(max_workers=num_gpus) as executor:
+                    # Prepara os argumentos para cada cliente
+                    tasks = []
+                    for i, client_id in enumerate(selected_clients_ids):
+                        gpu_id = i % num_gpus  # Distribuição Round-Robin entre as GPUs
+                        args = (client_id, self.config, round_num, current_lr, gpu_id)
+                        tasks.append(executor.submit(train_client_process, args))
+
+                    # Coleta os resultados (pesos do modelo) quando estiverem prontos
+                    for future in concurrent.futures.as_completed(tasks):
+                        try:
+                            cpu_weights = future.result()
+                            client_weights_list.append(cpu_weights)
+                        except Exception as e:
+                            print(f"Erro ao treinar cliente: {e}")
+
             # Aggregate models on the CPU
             print("Aggregating client models...")
             self._aggregate_models(client_weights_list)

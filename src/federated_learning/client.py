@@ -88,7 +88,7 @@ class ClientTrainer:
             per_device_train_batch_size=self.config['batch_size'],
             lr_scheduler_type=self.config['lr_scheduler_type'],
             save_strategy="no", # We save manually
-            evaluation_strategy="no",
+            #evaluation_strategy="no",
         )
 
         # 3. Setup Trainer

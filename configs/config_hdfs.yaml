@@ -22,12 +22,12 @@ lora_dropout: 0.1
 
 # --- Federated Learning Settings ---
 num_rounds: 50
-num_clients: 50
+num_clients: 40
 client_frac: 0.1
 
 # --- Client Training Settings ---
 max_steps: 10
-batch_size: 32
+batch_size: 8
 initial_lr: 0.001
 min_lr: 0.00001
 lr_scheduler_type: 'cosine'

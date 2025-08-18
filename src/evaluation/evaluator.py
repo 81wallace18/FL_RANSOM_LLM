@@ -39,8 +39,9 @@ class Evaluator:
         """
         Calculates the top-k next-token prediction accuracy for each log sequence.
         """
+        print("Calculating top-k accuracy...")
         accuracies = {f'top{k}': [] for k in self.config['top_k_values']}
-        
+        print("Model loaded. Starting evaluation...")
         model.to(self.device)
         model.eval()
 
@@ -49,7 +50,7 @@ class Evaluator:
             for i, text in enumerate(self.test_df["Content"]):
                 if (i + 1) % 100 == 0:
                     print(f"\r  Calculating accuracy... {i + 1}/{total_texts}", end="")
-                
+            
                 inputs = tokenizer(str(text), return_tensors="pt", padding=True, truncation=True, max_length=1024)
                 inputs = {key: val.to(self.device) for key, val in inputs.items()}
                 
@@ -81,6 +82,7 @@ class Evaluator:
         tokenizer.pad_token = tokenizer.eos_token
 
         all_f1_results = []
+        print(f"Evaluating {self.config['num_rounds']} rounds...")
 
         for round_num in range(1, self.config['num_rounds'] + 1):
             print(f"\n--- Evaluating Round {round_num} ---")
@@ -90,6 +92,7 @@ class Evaluator:
                 print(f"Model for round {round_num} not found. Skipping.")
                 continue
 
+            print("Loading model...")
             # Load model for the current round
             base_model = AutoModelForCausalLM.from_pretrained(self.config['model_name'])
             if self.config['lora']:
@@ -97,17 +100,21 @@ class Evaluator:
             else:
                 model = AutoModelForCausalLM.from_pretrained(model_path)
 
+            print(f"Calculating accuracies... {model}")
             # Calculate accuracies
             acc_df = self._calculate_top_k_accuracy(model, tokenizer)
+            print("Accuracies calculated:")
             acc_df['label'] = self.test_df['Label']
-            
+            print(acc_df.describe())
             # Find best F1 score for each k
             for k in self.config['top_k_values']:
+                print(f"Finding best F1 for top-{k} accuracy...")
                 best_f1 = 0
                 best_th = 0
                 thresholds = np.linspace(0, 1, self.config['f1_threshold_steps'])
                 
                 for th in thresholds:
+                    print(f"  Testing threshold {th:.4f}...", end='\r')
                     # Anomaly is when accuracy is LOW
                     preds = (acc_df[f'top{k}'] < th).astype(int)
                     f1 = f1_score(acc_df['label'], preds)

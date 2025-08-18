@@ -4,7 +4,7 @@ import os
 from src.data_processing.ransomlog_processor import RansomLogProcessor
 from src.data_processing.hdfs_processor import HDFSProcessor
 from src.federated_learning.server import FederatedServer
-from src.evaluation.evaluator import Evaluator
+from src.evaluation.evaluator_antigo import Evaluator
 
 def main(config_path):
     """

@@ -20,7 +20,8 @@ def train_client_process(args):
         torch.cuda.set_device(gpu_id)
     
     print(f"Iniciando treinamento para o cliente {client_id} na GPU {gpu_id}")
-    client_trainer = ClientTrainer(client_id, config)
+    # Passa o gpu_id para o ClientTrainer
+    client_trainer = ClientTrainer(client_id, config, gpu_id)
     cpu_weights = client_trainer.train(round_num, learning_rate)
     return cpu_weights
 

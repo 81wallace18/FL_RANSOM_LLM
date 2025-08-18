@@ -16,9 +16,10 @@ class ClientTrainer:
     """
     Manages the training process for a single client in a federated learning round.
     """
-    def __init__(self, client_id, config):
+    def __init__(self, client_id, config, gpu_id=0):
         self.client_id = client_id
         self.config = config
+        self.gpu_id = gpu_id # Armazena o ID da GPU
         self.model_name = config['model_name']
         self.use_lora = config['lora']
 
@@ -47,9 +48,8 @@ class ClientTrainer:
                 model = AutoModelForMaskedLM.from_pretrained(model_path)
         else:
             if self.use_lora:
-                # device_map={'': torch.cuda.current_device()} ensures the model is loaded directly
-                # onto the GPU assigned to this process, which is required for quantized models.
-                device_map = {'': torch.cuda.current_device()} if torch.cuda.is_available() else "auto"
+                # Mapeia explicitamente para a GPU correta usando o ID passado.
+                device_map = {'': f'cuda:{self.gpu_id}'} if torch.cuda.is_available() else "auto"
                 model = AutoModelForCausalLM.from_pretrained(
                     self.model_name,
                     torch_dtype=torch.float16,

@@ -25,6 +25,7 @@ lora_alpha_multiplier: 2 # lora_alpha will be lora_rank * multiplier
 lora_dropout: 0.1
 
 # --- Federated Learning Settings ---
+use_parallel_training: true # Set to false to run sequentially (e.g., with CUDA_VISIBLE_DEVICES=1)
 num_rounds: 50
 num_clients: 50
 client_frac: 0.1 # Fraction of clients to select each round

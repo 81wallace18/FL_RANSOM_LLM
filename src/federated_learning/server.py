@@ -124,21 +124,58 @@ class FederatedServer:
 
     def run_federated_training(self):
         """The main federated training loop."""
-        # 1. Setup: Split data for clients
         self._split_data_for_clients()
 
+        # --- Lógica Condicional para Paralelismo ---
+        if self.config.get('use_parallel_training', False):
+            self._run_parallel_training()
+        else:
+            self._run_sequential_training()
+
+    def _run_sequential_training(self):
+        """Executes training sequentially in the main process."""
+        print("--- Running in Sequential Mode ---")
+        for round_num in range(1, self.config['num_rounds'] + 1):
+            print(f"\n===== Starting Round {round_num}/{self.config['num_rounds']} =====")
+            
+            num_selected_clients = int(self.config['num_clients'] * self.config['client_frac'])
+            selected_clients_ids = random.sample(range(self.config['num_clients']), num_selected_clients)
+            print(f"Clients selected for this round: {selected_clients_ids}")
+
+            client_weights_list = []
+            current_lr = self._get_learning_rate(round_num)
+            for client_id in selected_clients_ids:
+                client_trainer = ClientTrainer(client_id, self.config)
+                cpu_weights = client_trainer.train(round_num, current_lr)
+                if cpu_weights:
+                    client_weights_list.append(cpu_weights)
+            
+            print("Aggregating client models...")
+            self._aggregate_models(client_weights_list)
+            
+            round_model_path = os.path.join(
+                self.config['results_path'], self.config['simulation_name'],
+                f'round_{round_num}', 'global_model'
+            )
+            os.makedirs(round_model_path, exist_ok=True)
+            self.global_model.save_pretrained(round_model_path)
+            print(f"New global model for round {round_num} saved to: {round_model_path}")
+
+    def _run_parallel_training(self):
+        """Executes training in parallel across multiple GPUs."""
+        print("--- Running in Parallel Mode ---")
         num_gpus = torch.cuda.device_count()
         if num_gpus == 0:
-            print("AVISO: Nenhuma GPU encontrada. Rodando em CPU (pode ser muito lento).")
-        else:
-            print(f"Encontradas {num_gpus} GPUs. Distribuindo clientes entre elas.")
+            print("AVISO: Nenhuma GPU encontrada. Voltando para o modo sequencial.")
+            self._run_sequential_training()
+            return
+        
+        print(f"Encontradas {num_gpus} GPUs. Distribuindo clientes entre elas.")
 
-        # Helper para dividir a lista de clientes em lotes do tamanho do número de GPUs
         def chunks(lst, n):
             for i in range(0, len(lst), n):
                 yield lst[i:i + n]
 
-        # 2. Training Loop
         for round_num in range(1, self.config['num_rounds'] + 1):
             print(f"\n===== Starting Round {round_num}/{self.config['num_rounds']} =====")
             
@@ -149,40 +186,37 @@ class FederatedServer:
             client_weights_list = []
             current_lr = self._get_learning_rate(round_num)
 
-            if num_gpus == 0:
-                # Modo sequencial para CPU
-                for client_id in selected_clients_ids:
-                    args = (client_id, self.config, round_num, current_lr, -1)
-                    cpu_weights = train_client_process(args)
-                    client_weights_list.append(cpu_weights)
-            else:
-                # Processa clientes em lotes para evitar sobrecarga da GPU
-                client_chunks = list(chunks(selected_clients_ids, num_gpus))
-                for i, client_chunk in enumerate(client_chunks):
-                    print(f"  --- Processing client batch {i+1}/{len(client_chunks)} ---")
-                    with concurrent.futures.ProcessPoolExecutor(max_workers=num_gpus) as executor:
-                        tasks = []
-                        for j, client_id in enumerate(client_chunk):
-                            gpu_id = j % num_gpus
-                            args = (client_id, self.config, round_num, current_lr, gpu_id)
-                            tasks.append(executor.submit(train_client_process, args))
+            # Mover o modelo global para a CPU para liberar VRAM para os clientes
+            self.global_model.to('cpu')
+            torch.cuda.empty_cache()
 
-                        for future in concurrent.futures.as_completed(tasks):
-                            try:
-                                cpu_weights = future.result()
-                                if cpu_weights:
-                                    client_weights_list.append(cpu_weights)
-                            except Exception as e:
-                                print(f"Erro ao treinar cliente: {e}")
+            client_chunks = list(chunks(selected_clients_ids, num_gpus))
+            for i, client_chunk in enumerate(client_chunks):
+                print(f"  --- Processing client batch {i+1}/{len(client_chunks)} ---")
+                with concurrent.futures.ProcessPoolExecutor(max_workers=num_gpus) as executor:
+                    tasks = []
+                    for j, client_id in enumerate(client_chunk):
+                        gpu_id = j % num_gpus
+                        args = (client_id, self.config, round_num, current_lr, gpu_id)
+                        tasks.append(executor.submit(train_client_process, args))
+
+                    for future in concurrent.futures.as_completed(tasks):
+                        try:
+                            cpu_weights = future.result()
+                            if cpu_weights:
+                                client_weights_list.append(cpu_weights)
+                        except Exception as e:
+                            print(f"Erro ao treinar cliente: {e}")
+            
+            # Mover o modelo de volta para a GPU para agregação
+            self.global_model.to(self.device)
 
             print("Aggregating client models...")
             self._aggregate_models(client_weights_list)
             
             round_model_path = os.path.join(
-                self.config['results_path'],
-                self.config['simulation_name'],
-                f'round_{round_num}',
-                'global_model'
+                self.config['results_path'], self.config['simulation_name'],
+                f'round_{round_num}', 'global_model'
             )
             os.makedirs(round_model_path, exist_ok=True)
             self.global_model.save_pretrained(round_model_path)

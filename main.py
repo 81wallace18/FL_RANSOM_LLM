@@ -45,7 +45,19 @@ def main(config_path):
     evaluator.evaluate()
     print("--- Evaluation Complete ---")
 
+import multiprocessing as mp
+
 if __name__ == "__main__":
+    # Define o método de início de multiprocessamento como 'spawn'.
+    # Isso é crucial para evitar erros de inicialização da CUDA em processos filhos.
+    # Deve ser chamado dentro deste bloco if e antes de qualquer código de paralelismo.
+    try:
+        mp.set_start_method('spawn', force=True)
+        print("Método de início de multiprocessamento configurado para 'spawn'.")
+    except RuntimeError:
+        # Pode já ter sido definido, o que não é um problema.
+        pass
+
     parser = argparse.ArgumentParser(description="Run Federated Learning for Anomaly Detection.")
     parser.add_argument('--config', type=str, default='configs/config.yaml',
                         help='Path to the YAML configuration file.')

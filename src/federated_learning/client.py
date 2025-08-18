@@ -50,6 +50,7 @@ class ClientTrainer:
                 model = AutoModelForCausalLM.from_pretrained(
                     self.model_name,
                     torch_dtype=torch.float16,
+                    device_map="auto", # Adicionado para carregar o modelo quantizado diretamente na GPU correta
                     **{k: v for k, v in quantization_config.items() if k != 'bnb_4bit_compute_dtype'}
                 )
                 model = PeftModel.from_pretrained(model, model_path, is_trainable=True)

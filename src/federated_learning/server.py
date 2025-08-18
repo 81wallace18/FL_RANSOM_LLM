@@ -127,18 +127,21 @@ class FederatedServer:
         # 1. Setup: Split data for clients
         self._split_data_for_clients()
 
-        # Identifica o número de GPUs disponíveis
         num_gpus = torch.cuda.device_count()
         if num_gpus == 0:
             print("AVISO: Nenhuma GPU encontrada. Rodando em CPU (pode ser muito lento).")
         else:
             print(f"Encontradas {num_gpus} GPUs. Distribuindo clientes entre elas.")
 
+        # Helper para dividir a lista de clientes em lotes do tamanho do número de GPUs
+        def chunks(lst, n):
+            for i in range(0, len(lst), n):
+                yield lst[i:i + n]
+
         # 2. Training Loop
         for round_num in range(1, self.config['num_rounds'] + 1):
             print(f"\n===== Starting Round {round_num}/{self.config['num_rounds']} =====")
             
-            # Select clients for this round
             num_selected_clients = int(self.config['num_clients'] * self.config['client_frac'])
             selected_clients_ids = random.sample(range(self.config['num_clients']), num_selected_clients)
             print(f"Clients selected for this round: {selected_clients_ids}")
@@ -146,36 +149,35 @@ class FederatedServer:
             client_weights_list = []
             current_lr = self._get_learning_rate(round_num)
 
-            # Se não houver GPUs, volte para o modo sequencial
             if num_gpus == 0:
+                # Modo sequencial para CPU
                 for client_id in selected_clients_ids:
-                    # Se não houver GPU, o ID da GPU é -1 (indicando CPU)
                     args = (client_id, self.config, round_num, current_lr, -1)
                     cpu_weights = train_client_process(args)
                     client_weights_list.append(cpu_weights)
             else:
-                # Use ProcessPoolExecutor para treinar clientes em paralelo nas GPUs
-                with concurrent.futures.ProcessPoolExecutor(max_workers=num_gpus) as executor:
-                    # Prepara os argumentos para cada cliente
-                    tasks = []
-                    for i, client_id in enumerate(selected_clients_ids):
-                        gpu_id = i % num_gpus  # Distribuição Round-Robin entre as GPUs
-                        args = (client_id, self.config, round_num, current_lr, gpu_id)
-                        tasks.append(executor.submit(train_client_process, args))
+                # Processa clientes em lotes para evitar sobrecarga da GPU
+                client_chunks = list(chunks(selected_clients_ids, num_gpus))
+                for i, client_chunk in enumerate(client_chunks):
+                    print(f"  --- Processing client batch {i+1}/{len(client_chunks)} ---")
+                    with concurrent.futures.ProcessPoolExecutor(max_workers=num_gpus) as executor:
+                        tasks = []
+                        for j, client_id in enumerate(client_chunk):
+                            gpu_id = j % num_gpus
+                            args = (client_id, self.config, round_num, current_lr, gpu_id)
+                            tasks.append(executor.submit(train_client_process, args))
 
-                    # Coleta os resultados (pesos do modelo) quando estiverem prontos
-                    for future in concurrent.futures.as_completed(tasks):
-                        try:
-                            cpu_weights = future.result()
-                            client_weights_list.append(cpu_weights)
-                        except Exception as e:
-                            print(f"Erro ao treinar cliente: {e}")
+                        for future in concurrent.futures.as_completed(tasks):
+                            try:
+                                cpu_weights = future.result()
+                                if cpu_weights:
+                                    client_weights_list.append(cpu_weights)
+                            except Exception as e:
+                                print(f"Erro ao treinar cliente: {e}")
 
-            # Aggregate models on the CPU
             print("Aggregating client models...")
             self._aggregate_models(client_weights_list)
             
-            # Save new global model
             round_model_path = os.path.join(
                 self.config['results_path'],
                 self.config['simulation_name'],

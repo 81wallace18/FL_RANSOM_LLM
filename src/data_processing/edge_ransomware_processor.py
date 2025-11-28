@@ -57,7 +57,6 @@ class EdgeRansomwareProcessor(BaseProcessor):
             f"bwd_pkts {row.get('Total Bwd packets', '')}",
             f"fwd_bytes {row.get('Total Length of Fwd Packet', '')}",
             f"bwd_bytes {row.get('Total Length of Bwd Packet', '')}",
-            f"attack {row.get('Attack Name', '')}",
         ]
         return " ".join(str(p) for p in parts)
 

@@ -3,6 +3,7 @@ import argparse
 import os
 from src.data_processing.ransomlog_processor import RansomLogProcessor
 from src.data_processing.hdfs_processor import HDFSProcessor
+from src.data_processing.edge_ransomware_processor import EdgeRansomwareProcessor
 from src.federated_learning.server import FederatedServer
 from src.evaluation.evaluator_antigo import Evaluator
 
@@ -26,6 +27,8 @@ def main(config_path):
     print("\n--- Initializing Data Processing ---")
     if config['dataset_name'] == 'ransomlog':
         processor = RansomLogProcessor(config)
+    elif config['dataset_name'] == 'edge_ransomware':
+        processor = EdgeRansomwareProcessor(config)
     elif config['dataset_name'] == 'hdfs':
         processor = HDFSProcessor(config)
     else:

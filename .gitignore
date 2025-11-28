@@ -5,3 +5,12 @@ data/hdfs/raw/*
 data/ransomlog/processed/*
 data/ransomlog/raw/*  
 results/
+
+data/ids_ransomware/processed/*
+data/ids_ransomware/raw/* 
+
+
+CLAUDE.md
+exemplos/
+
+docs/

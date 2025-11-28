@@ -149,11 +149,12 @@ class EdgeRansomwareProcessor(BaseProcessor):
 
         def preprocess_function(examples):
             examples["text"] = [text + tokenizer.eos_token for text in examples["text"]]
+            # Use a shorter maximum sequence length to reduce VRAM usage.
             return tokenizer(
                 examples["text"],
                 padding="max_length",
                 truncation=True,
-                max_length=1024,
+                max_length=256,
             )
 
         tokenized = dataset.map(preprocess_function, batched=True, remove_columns=["text"])
@@ -162,4 +163,3 @@ class EdgeRansomwareProcessor(BaseProcessor):
         final_dataset = DatasetDict({"train": tokenized})
         final_dataset.save_to_disk(self.tokenized_path)
         print(f"Tokenized Edge-IIoTSet ransomware dataset saved to {self.tokenized_path}")
-

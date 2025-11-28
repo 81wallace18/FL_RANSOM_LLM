@@ -33,13 +33,6 @@ class ClientTrainer:
         )
         print(f"Client {self.client_id}: Loading model from {model_path}")
 
-        quantization_config = {
-            'load_in_4bit': True,
-            'bnb_4bit_quant_type': 'nf4',
-            'bnb_4bit_compute_dtype': torch.float16,
-            'bnb_4bit_use_double_quant': True,
-        }
-
         if 'bert' in self.model_name.lower():
             if self.use_lora:
                 device_map = {'': f'cuda:{self.gpu_id}'} if torch.cuda.is_available() else "auto"
@@ -55,7 +48,6 @@ class ClientTrainer:
                     self.model_name,
                     torch_dtype=torch.float16,
                     device_map=device_map,
-                    **{k: v for k, v in quantization_config.items() if k != 'bnb_4bit_compute_dtype'}
                 )
                 model = PeftModel.from_pretrained(model, model_path, is_trainable=True, device_map=device_map)
             else:

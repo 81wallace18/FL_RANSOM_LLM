@@ -153,7 +153,7 @@ class EdgeRansomwareProcessor(BaseProcessor):
                 examples["text"],
                 padding="max_length",
                 truncation=True,
-                max_length=256,
+                max_length=1024,
             )
 
         tokenized = dataset.map(preprocess_function, batched=True, remove_columns=["text"])

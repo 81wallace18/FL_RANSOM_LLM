@@ -21,16 +21,16 @@ lora_alpha_multiplier: 2
 lora_dropout: 0.1
 
 # --- Federated Learning Settings ---
-# Start with sequential training to reduce CUDA OOM risk.
+# HPC Mode: Sequential training (1 GPU allocated).
 use_parallel_training: false
 num_rounds: 50
 num_clients: 50
 client_frac: 0.1
 
 # --- Client Training Settings ---
-# Conservative defaults to fit comfortably in GPU memory.
-max_steps: 5
-batch_size: 2
+# HPC Mode: Larger batch size for stable gradients.
+max_steps: 10
+batch_size: 32
 initial_lr: 0.001
 min_lr: 0.00001
 lr_scheduler_type: 'cosine'

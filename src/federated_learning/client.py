@@ -46,7 +46,7 @@ class ClientTrainer:
                 device_map = {'': f'cuda:{self.gpu_id}'} if torch.cuda.is_available() else "auto"
                 model = AutoModelForCausalLM.from_pretrained(
                     self.model_name,
-                    torch_dtype=torch.float16,
+                    dtype=torch.float16,
                     device_map=device_map,
                 )
                 model = PeftModel.from_pretrained(model, model_path, is_trainable=True, device_map=device_map)

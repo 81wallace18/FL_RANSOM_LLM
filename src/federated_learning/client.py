@@ -83,6 +83,7 @@ class ClientTrainer:
             fp16=True,
             optim='paged_adamw_8bit',
             per_device_train_batch_size=self.config['batch_size'],
+            gradient_accumulation_steps=self.config.get('gradient_accumulation_steps', 1),
             lr_scheduler_type=self.config['lr_scheduler_type'],
             save_strategy="no", # We save manually
             #evaluation_strategy="no",

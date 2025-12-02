@@ -7,7 +7,7 @@ data/ransomlog/raw/*
 results/
 
 data/ids_ransomware/processed/*
-data/ids_ransomware/raw/* 
+# data/ids_ransomware/raw/* 
 
 
 CLAUDE.md

@@ -31,7 +31,7 @@ client_frac: 0.1
 # Optimized for RTX 4090: Small physical batch + Gradient Accumulation = Large effective batch.
 max_steps: 10
 batch_size: 4
-gradient_accumulation_steps: 8
+gradient_accumulation_steps: 16
 initial_lr: 0.001
 min_lr: 0.00001
 lr_scheduler_type: 'cosine'

@@ -1,7 +1,7 @@
 # configs/config_edge_ransomware.yaml
 
 # --- General Experiment Settings ---
-simulation_name: "EdgeRansomware_SmolLM135M_LoRA_R8"
+simulation_name: "EdgeRansomware_SmolLM135M_LoRA_R16 v1.3"
 dataset_name: "edge_ransomware"
 description: "Experiment with CIC-BCCC-NRC-Edge-IIoTSet-2022 (Benign vs Ransomware) using SmolLM-135M and LoRA rank 8."
 
@@ -11,28 +11,28 @@ results_path: "./results/"
 
 # --- Data Processing Settings ---
 session_window_spliter: " ;-; "
-force_reprocess_data: False
+force_reprocess_data: true
 
 # --- Model Settings ---
 model_name: "HuggingFaceTB/SmolLM-135M"
 lora: True
-lora_rank: 8
-lora_alpha_multiplier: 2
+lora_rank: 32
+lora_alpha_multiplier: 4
 lora_dropout: 0.1
 
 # --- Federated Learning Settings ---
 # HPC Mode: Parallel training enabled (Dual GPU).
 use_parallel_training: true
-num_rounds: 50
+num_rounds: 20
 num_clients: 50
-client_frac: 0.1
+client_frac: 0.2
 
 # --- Client Training Settings ---
 # Optimized for RTX 4090: Small physical batch + Gradient Accumulation = Large effective batch.
-max_steps: 10
-batch_size: 4
-gradient_accumulation_steps: 16
-initial_lr: 0.001
+max_steps: 150
+batch_size: 8
+gradient_accumulation_steps: 18
+initial_lr: 0.0005
 min_lr: 0.00001
 lr_scheduler_type: 'cosine'
 

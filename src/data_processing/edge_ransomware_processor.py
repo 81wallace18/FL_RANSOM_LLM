@@ -43,20 +43,33 @@ class EdgeRansomwareProcessor(BaseProcessor):
 
     def _build_text_from_row(self, row):
         """
-        Builds a textual representation of a single flow.
-        This keeps only a subset of the most relevant fields to avoid
-        extremely long sequences.
+        Builds a richer textual representation of a single flow.
+
+        Instead of apenas cabeçalhos e contagens brutas, expõe métricas que
+        capturam o comportamento do tráfego, como IAT, taxa de bytes,
+        variância de tamanho de pacotes e flags TCP. Esses campos funcionam
+        como “assinaturas” de ransomware e foram fundamentais para melhorar
+        o F1 em experimentos anteriores.
         """
+
+        def get_val(col_name):
+            return row.get(col_name, "")
+
         parts = [
-            f"flow_id {row.get('Flow ID', '')}",
-            f"src {row.get('Src IP', '')} port {row.get('Src Port', '')}",
-            f"dst {row.get('Dst IP', '')} port {row.get('Dst Port', '')}",
-            f"proto {row.get('Protocol', '')}",
-            f"duration {row.get('Flow Duration', '')}",
-            f"fwd_pkts {row.get('Total Fwd Packet', '')}",
-            f"bwd_pkts {row.get('Total Bwd packets', '')}",
-            f"fwd_bytes {row.get('Total Length of Fwd Packet', '')}",
-            f"bwd_bytes {row.get('Total Length of Bwd Packet', '')}",
+            f"proto {get_val('Protocol')}",
+            f"duration {get_val('Flow Duration')}",
+            # Automação / periodicidade
+            f"iat_mean {get_val('Flow IAT Mean')}",
+            # Volume e velocidade de tráfego
+            f"pkts_fwd {get_val('Total Fwd Packet')}",
+            f"pkts_bwd {get_val('Total Bwd packets')}",
+            f"bytes_rate {get_val('Flow Bytes/s')}",
+            # Padrões de tamanho de pacote (entropia / criptografia)
+            f"pkt_len_mean {get_val('Packet Length Mean')}",
+            f"pkt_len_var {get_val('Packet Length Variance')}",
+            # Comportamento de conexão (scanning / encerramento anômalo)
+            f"syn_flags {get_val('SYN Flag Count')}",
+            f"fin_flags {get_val('FIN Flag Count')}",
         ]
         return " ".join(str(p) for p in parts)
 
@@ -81,8 +94,12 @@ class EdgeRansomwareProcessor(BaseProcessor):
         print("Building textual representation for each flow...")
         combined_df["Content"] = combined_df.apply(self._build_text_from_row, axis=1)
 
-        # Mantém apenas as colunas necessárias para o restante do pipeline
-        final_df = combined_df[["Content", "Label"]].copy()
+        # Mantém as colunas necessárias para o pipeline e avaliação temporal
+        # (Content/Label para treino e métricas clássicas; Timestamp/Src IP/Attack Name
+        #  para métricas de detecção precoce e análise por dispositivo).
+        final_df = combined_df[
+            ["Flow ID", "Src IP", "Dst IP", "Timestamp", "Attack Name", "Content", "Label"]
+        ].copy()
 
         # Embaralha e faz split treino/teste
         final_df = final_df.sample(frac=1.0, random_state=42).reset_index(drop=True)
@@ -104,15 +121,15 @@ class EdgeRansomwareProcessor(BaseProcessor):
           - IP addresses
           - Long numeric IDs
         """
-        regex_patterns = [
-            r"\d+\.\d+\.\d+\.\d+",  # IP addresses
-            r"(?<=[^A-Za-z0-9])(\-?\+?\d+)(?=[^A-Za-z0-9])|[0-9]+$",  # generic numbers
-        ]
+        # Nova sanitização: mantém números (duração, bytes, IAT etc.) para que
+        # o modelo consiga capturar magnitudes e padrões estatísticos, mas
+        # mascara endereços IP para preservar privacidade.
+        ip_pattern = r"\b(?:\d{1,3}\.){3}\d{1,3}\b"
 
-        def apply_regex(line):
-            text = str(line)
-            for pattern in regex_patterns:
-                text = re.sub(pattern, "<*>", text)
+        def apply_regex(text):
+            text = str(text)
+            # Substitui apenas IPs dentro do texto por um token genérico.
+            text = re.sub(ip_pattern, "IP_ADDR", text)
             return text
 
         print("Sanitizing Edge-IIoTSet ransomware train and test sets...")

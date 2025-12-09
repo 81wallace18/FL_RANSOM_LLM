@@ -72,6 +72,74 @@ class Evaluator:
         
         return pd.DataFrame(accuracies)
 
+    def _compute_temporal_metrics(self, preds, round_num, k):
+        """
+        Computes early-stage detection metrics (TTD, coverage, FPR) when
+        temporal and device information is available in the test set.
+
+        - TTD (Time-to-Detection): tempo médio/mediano entre o início do ataque
+          em um dispositivo e a primeira detecção.
+        - Detection coverage: fração de dispositivos atacados para os quais
+          houve detecção.
+        - Benign FPR: taxa de falsos positivos em tráfego benigno.
+        """
+        required_cols = ['Timestamp', 'Src IP', 'Label']
+        if not all(col in self.test_df.columns for col in required_cols):
+            print("Temporal metrics skipped: required columns not found in test.csv.")
+            return None
+
+        df = self.test_df.copy()
+        df['pred'] = preds.values if hasattr(preds, "values") else preds
+
+        # Converte timestamp para datetime, ignorando formatos inválidos
+        df['Timestamp_parsed'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+        df = df.dropna(subset=['Timestamp_parsed'])
+
+        ttds = []
+        detection_coverage = 0
+        attacked_devices = 0
+
+        # Métricas por dispositivo (Src IP)
+        for device_id, group in df.groupby('Src IP'):
+            group = group.sort_values('Timestamp_parsed')
+            if (group['Label'] == 1).any():
+                attacked_devices += 1
+                attack_start_time = group.loc[group['Label'] == 1, 'Timestamp_parsed'].min()
+                detections = group[
+                    (group['Timestamp_parsed'] >= attack_start_time) & (group['pred'] == 1)
+                ]
+                if not detections.empty:
+                    first_detection_time = detections['Timestamp_parsed'].min()
+                    delta = (first_detection_time - attack_start_time).total_seconds()
+                    ttds.append(max(delta, 0.0))
+                    detection_coverage += 1
+
+        if attacked_devices > 0 and ttds:
+            mean_ttd = float(np.mean(ttds))
+            median_ttd = float(np.median(ttds))
+            detection_coverage_ratio = detection_coverage / attacked_devices
+        else:
+            mean_ttd = float('nan')
+            median_ttd = float('nan')
+            detection_coverage_ratio = 0.0
+
+        # FPR em tráfego benigno
+        benign = df[df['Label'] == 0]
+        if not benign.empty:
+            benign_fpr = float((benign['pred'] == 1).mean())
+        else:
+            benign_fpr = float('nan')
+
+        return {
+            'round': round_num,
+            'k': k,
+            'mean_ttd_seconds': mean_ttd,
+            'median_ttd_seconds': median_ttd,
+            'detection_coverage': detection_coverage_ratio,
+            'benign_fpr': benign_fpr,
+            'num_attacked_devices': attacked_devices
+        }
+
     def evaluate(self):
         """
         Main evaluation loop. Iterates through saved models, calculates metrics,
@@ -82,6 +150,7 @@ class Evaluator:
         tokenizer.pad_token = tokenizer.eos_token
 
         all_f1_results = []
+        all_temporal_results = []
         print(f"Evaluating {self.config['num_rounds']} rounds...")
 
         for round_num in range(1, self.config['num_rounds'] + 1):
@@ -137,8 +206,21 @@ class Evaluator:
                     'recall': recall
                 })
 
+                # Métricas temporais (se habilitado e se as colunas existirem)
+                if self.config.get('enable_temporal_metrics', True):
+                    temporal_metrics = self._compute_temporal_metrics(final_preds, round_num, k)
+                    if temporal_metrics is not None:
+                        all_temporal_results.append(temporal_metrics)
+
         # Save final results
         f1_df = pd.DataFrame(all_f1_results)
         f1_results_path = os.path.join(self.results_dir, 'f1_scores.csv')
         f1_df.to_csv(f1_results_path, index=False)
         print(f"\nEvaluation complete. F1 score results saved to {f1_results_path}")
+
+        # Salva métricas temporais, se tiverem sido calculadas
+        if all_temporal_results:
+            temporal_df = pd.DataFrame(all_temporal_results)
+            temporal_results_path = os.path.join(self.results_dir, 'temporal_metrics.csv')
+            temporal_df.to_csv(temporal_results_path, index=False)
+            print(f"Temporal evaluation complete. Results saved to {temporal_results_path}")

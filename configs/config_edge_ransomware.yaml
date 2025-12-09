@@ -27,9 +27,18 @@ num_rounds: 50
 num_clients: 50
 client_frac: 0.1
 
+# Data distribution and client behavior
+#   data_distribution_strategy: 'iid', 'quantity_skew_dirichlet', or 'hetero_device'
+data_distribution_strategy: "hetero_device"
+non_iid_alpha: 0.5          # Used only for 'quantity_skew_dirichlet'
+
+# Client selection and aggregation
+client_selection_strategy: "data_size_proportional"  # or 'uniform'
+use_weighted_aggregation: true
+
 # --- Client Training Settings ---
 # Optimized for RTX 4090: Small physical batch + Gradient Accumulation = Large effective batch.
-max_steps: 10
+max_steps: 50
 batch_size: 4
 gradient_accumulation_steps: 8
 initial_lr: 0.001
@@ -39,3 +48,6 @@ lr_scheduler_type: 'cosine'
 # --- Evaluation Settings ---
 top_k_values: [1, 3, 5, 10]
 f1_threshold_steps: 1000
+
+# Enable temporal / early-stage evaluation metrics (TTD, FPR, coverage)
+enable_temporal_metrics: true

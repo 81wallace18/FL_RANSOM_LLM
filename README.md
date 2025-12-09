@@ -134,3 +134,14 @@ The modular structure makes it easy to add a new dataset processor.
 elif config['dataset_name'] == 'my_dataset':
     processor = MyDatasetProcessor(config)
 ```
+
+---
+
+## Non-IID Clients and Temporal Evaluation
+
+For scenarios such as Edge/IoT with heterogeneous devices and early-stage ransomware detection, the framework supports additional options (see `configs/config_edge_ransomware.yaml`):
+
+- `data_distribution_strategy`: `"iid"`, `"quantity_skew_dirichlet"` or `"hetero_device"` to control how the tokenized dataset is split across clients.
+- `client_selection_strategy`: `"uniform"` or `"data_size_proportional"` for round-wise client sampling.
+- `use_weighted_aggregation`: when `true`, aggregates client updates proportionally to each client's local data size.
+- `enable_temporal_metrics`: when `true`, the evaluator computes temporal metrics (TTD, coverage, benign FPR) for datasets that include `Timestamp` and `Src IP` in `test.csv`.

@@ -20,9 +20,9 @@ force_reprocess_data: False # If True, will re-run the data processing steps
 # --- Model Settings ---
 model_name: "HuggingFaceTB/SmolLM-135M"
 lora: True
-lora_rank: 8
-lora_alpha_multiplier: 2 # lora_alpha will be lora_rank * multiplier
-lora_dropout: 0.1
+lora_rank: 16  # Increased from 8 for higher capacity
+lora_alpha_multiplier: 4  # Increased from 2 for better stability
+lora_dropout: 0.05  # Reduced from 0.1 to prevent underfitting
 
 # --- Federated Learning Settings ---
 use_parallel_training: true # Set to false to run sequentially (e.g., with CUDA_VISIBLE_DEVICES=1)
@@ -31,9 +31,10 @@ num_clients: 50
 client_frac: 0.1 # Fraction of clients to select each round
 
 # --- Client Training Settings ---
-max_steps: 10
-batch_size: 32
-initial_lr: 0.001
+max_steps: 50  # Increased from 10 for better learning
+batch_size: 16  # Reduced from 32 for better generalization
+gradient_accumulation_steps: 4  # Effective batch size of 64
+initial_lr: 0.0001  # Reduced from 0.001 for more stable training
 min_lr: 0.00001
 lr_scheduler_type: 'cosine' # or 'constant'
 

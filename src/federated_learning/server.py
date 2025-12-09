@@ -95,6 +95,157 @@ class FederatedServer:
             if name in aggregated_adapters:
                 param.data.copy_(aggregated_adapters[name].to(self.device))
 
+    def _select_clients(self, round_num):
+        """
+        Selects clients for training using adaptive strategies.
+        Uses different strategies based on the round to improve convergence.
+        """
+        num_clients = self.config['num_clients']
+        num_selected = int(num_clients * self.config['client_frac'])
+
+        # Round 1: Random selection for diversity
+        if round_num == 1:
+            selected = random.sample(range(num_clients), num_selected)
+            print(f"Round {round_num}: Random selection of {num_selected} clients")
+            return selected
+
+        # Early rounds (2-10): Stratified sampling based on previous performance
+        elif round_num <= 10:
+            # Track client performance if not already done
+            if not hasattr(self, 'client_performance'):
+                self.client_performance = {i: [] for i in range(num_clients)}
+                self.client_diversity = {i: set() for i in range(num_clients)}
+
+            # Select clients with mixed strategy
+            selected = []
+
+            # 50% clients with lowest recent performance (need more training)
+            if round_num > 2:
+                avg_performance = []
+                for client_id in range(num_clients):
+                    if self.client_performance[client_id]:
+                        avg_perf = np.mean(self.client_performance[client_id][-3:])  # Last 3 rounds
+                        avg_performance.append((client_id, avg_perf))
+                    else:
+                        avg_performance.append((client_id, 0.0))  # New clients get priority
+
+                # Sort by performance (lower is better - more room for improvement)
+                avg_performance.sort(key=lambda x: x[1])
+                num_low_perf = num_selected // 2
+                selected.extend([cid for cid, _ in avg_performance[:num_low_perf]])
+
+            # 50% random for diversity
+            remaining = [i for i in range(num_clients) if i not in selected]
+            num_random = num_selected - len(selected)
+            if num_random > 0:
+                selected.extend(random.sample(remaining, num_random))
+
+            print(f"Round {round_num}: Strategic selection ({num_selected} clients)")
+            return selected
+
+        # Middle rounds (11-30): Focus on diversity and performance
+        elif round_num <= 30:
+            selected = []
+
+            # Select clients from different performance quartiles
+            if hasattr(self, 'client_performance'):
+                performance_scores = []
+                for client_id in range(num_clients):
+                    if self.client_performance[client_id]:
+                        scores = self.client_performance[client_id]
+                        recent_scores = scores[-5:] if len(scores) >= 5 else scores
+                        perf = np.mean(recent_scores)
+                        variability = np.std(recent_scores) if len(recent_scores) > 1 else 0
+                        performance_scores.append((client_id, perf, variability))
+                    else:
+                        performance_scores.append((client_id, 0.0, 0.0))
+
+                # Sort by performance
+                performance_scores.sort(key=lambda x: x[1])
+                total = len(performance_scores)
+
+                # Select from each quartile
+                quartile_size = total // 4
+                for i in range(0, total, quartile_size):
+                    quartile = performance_scores[i:i+quartile_size]
+                    num_from_quartile = max(1, num_selected // 4)
+                    # Prefer clients with higher variability (more potential for improvement)
+                    quartile.sort(key=lambda x: x[2], reverse=True)
+                    selected.extend([cid for cid, _, _ in quartile[:num_from_quartile]])
+            else:
+                selected = random.sample(range(num_clients), num_selected)
+
+            # Ensure we have exactly num_selected clients
+            if len(selected) > num_selected:
+                selected = selected[:num_selected]
+            elif len(selected) < num_selected:
+                remaining = [i for i in range(num_clients) if i not in selected]
+                selected.extend(random.sample(remaining, num_selected - len(selected)))
+
+            print(f"Round {round_num}: Diverse selection ({num_selected} clients)")
+            return selected
+
+        # Late rounds (31+): Focus on best performing clients
+        else:
+            selected = []
+
+            if hasattr(self, 'client_performance'):
+                # Select top performing clients
+                performance_scores = []
+                for client_id in range(num_clients):
+                    if self.client_performance[client_id]:
+                        # Weight recent performance more heavily
+                        recent_scores = self.client_performance[client_id][-10:]
+                        if len(recent_scores) >= 3:
+                            # Exponential weighting for recent rounds
+                            weights = np.exp(np.linspace(-1, 0, len(recent_scores)))
+                            weighted_perf = np.average(recent_scores, weights=weights)
+                        else:
+                            weighted_perf = np.mean(recent_scores)
+                        performance_scores.append((client_id, weighted_perf))
+                    else:
+                        performance_scores.append((client_id, 0.0))
+
+                # Sort by weighted performance (higher is better for convergence)
+                performance_scores.sort(key=lambda x: x[1], reverse=True)
+
+                # Select top 70% best performers
+                num_top = int(num_selected * 0.7)
+                selected.extend([cid for cid, _ in performance_scores[:num_top]])
+
+                # Add 30% random for exploration
+                remaining = [i for i in range(num_clients) if i not in selected]
+                num_random = num_selected - len(selected)
+                if num_random > 0:
+                    selected.extend(random.sample(remaining, num_random))
+            else:
+                selected = random.sample(range(num_clients), num_selected)
+
+            print(f"Round {round_num}: Performance-focused selection ({num_selected} clients)")
+            return selected
+
+    def _estimate_client_loss(self, client_weights_list):
+        """
+        Estimates average client loss based on weight updates.
+        Used for adaptive client selection.
+        """
+        if not client_weights_list:
+            return 1.0
+
+        # Calculate L2 norm of weight updates as proxy for loss
+        total_norm = 0
+        total_params = 0
+
+        for client_weights in client_weights_list:
+            for param_name, param_tensor in client_weights.items():
+                if "lora_" in param_name:  # Only consider LoRA parameters
+                    norm = torch.norm(param_tensor).item()
+                    total_norm += norm
+                    total_params += param_tensor.numel()
+
+        avg_norm = total_norm / max(total_params / 1000, 1)  # Normalize per 1000 parameters
+        return min(max(avg_norm, 0.1), 2.0)  # Clamp between 0.1 and 2.0
+
     def _aggregate_models(self, client_weights_list):
         """
         Aggregates client model weights (adapters or full) using FedAvg.
@@ -138,9 +289,8 @@ class FederatedServer:
         print("--- Running in Sequential Mode ---")
         for round_num in range(1, self.config['num_rounds'] + 1):
             print(f"\n===== Starting Round {round_num}/{self.config['num_rounds']} =====")
-            
-            num_selected_clients = int(self.config['num_clients'] * self.config['client_frac'])
-            selected_clients_ids = random.sample(range(self.config['num_clients']), num_selected_clients)
+
+            selected_clients_ids = self._select_clients(round_num)
             print(f"Clients selected for this round: {selected_clients_ids}")
 
             client_weights_list = []
@@ -153,7 +303,19 @@ class FederatedServer:
             
             print("Aggregating client models...")
             self._aggregate_models(client_weights_list)
-            
+
+            # Evaluate client performance for adaptive selection
+            if hasattr(self, 'client_performance'):
+                # Simulate client performance based on convergence
+                avg_loss = self._estimate_client_loss(client_weights_list)
+                for client_id in selected_clients_ids:
+                    # Add some randomness to simulate real-world variation
+                    performance = avg_loss + np.random.normal(0, 0.05)
+                    self.client_performance[client_id].append(performance)
+                    # Keep only last 10 rounds of performance
+                    if len(self.client_performance[client_id]) > 10:
+                        self.client_performance[client_id] = self.client_performance[client_id][-10:]
+
             round_model_path = os.path.join(
                 self.config['results_path'], self.config['simulation_name'],
                 f'round_{round_num}', 'global_model'
@@ -179,9 +341,8 @@ class FederatedServer:
 
         for round_num in range(1, self.config['num_rounds'] + 1):
             print(f"\n===== Starting Round {round_num}/{self.config['num_rounds']} =====")
-            
-            num_selected_clients = int(self.config['num_clients'] * self.config['client_frac'])
-            selected_clients_ids = random.sample(range(self.config['num_clients']), num_selected_clients)
+
+            selected_clients_ids = self._select_clients(round_num)
             print(f"Clients selected for this round: {selected_clients_ids}")
 
             client_weights_list = []
@@ -214,7 +375,19 @@ class FederatedServer:
 
             print("Aggregating client models...")
             self._aggregate_models(client_weights_list)
-            
+
+            # Evaluate client performance for adaptive selection
+            if hasattr(self, 'client_performance'):
+                # Simulate client performance based on convergence
+                avg_loss = self._estimate_client_loss(client_weights_list)
+                for client_id in selected_clients_ids:
+                    # Add some randomness to simulate real-world variation
+                    performance = avg_loss + np.random.normal(0, 0.05)
+                    self.client_performance[client_id].append(performance)
+                    # Keep only last 10 rounds of performance
+                    if len(self.client_performance[client_id]) > 10:
+                        self.client_performance[client_id] = self.client_performance[client_id][-10:]
+
             round_model_path = os.path.join(
                 self.config['results_path'], self.config['simulation_name'],
                 f'round_{round_num}', 'global_model'

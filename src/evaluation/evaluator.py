@@ -34,10 +34,17 @@ class Evaluator:
         #     df[df['Label'] == 0].head(1000)
         # ]).sample(frac=1).reset_index(drop=True)
         return df
+    
+    def _is_in_top_k(self, top_k_preds, target_token):
+        """Helper function: checks if target_token is in the top-k predictions."""
+        return target_token in top_k_preds
 
     def _calculate_top_k_accuracy(self, model, tokenizer):
-        """
-        Calculates the top-k next-token prediction accuracy for each log sequence.
+        """Calculates the top-k prediction accuracy for each log sequence.
+
+        Supports two methods, configured via `accuracy_method` in the YAML:
+          - "shifted": usa próximo-token (logits shiftados vs labels shiftados)
+          - "original": replica a lógica do `evaluator_antigo` (sem shift)
         """
         print("Calculating top-k accuracy...")
         accuracies = {f'top{k}': [] for k in self.config['top_k_values']}
@@ -45,31 +52,59 @@ class Evaluator:
         model.to(self.device)
         model.eval()
 
+        method = self.config.get('accuracy_method', 'shifted')
+
         total_texts = len(self.test_df)
         with torch.no_grad():
             for i, text in enumerate(self.test_df["Content"]):
                 if (i + 1) % 100 == 0:
                     print(f"\r  Calculating accuracy... {i + 1}/{total_texts}", end="")
-            
-                inputs = tokenizer(str(text), return_tensors="pt", padding=True, truncation=True, max_length=1024)
+
+                inputs = tokenizer(
+                    str(text),
+                    return_tensors="pt",
+                    padding=True,
+                    truncation=True,
+                    max_length=1024,
+                )
                 inputs = {key: val.to(self.device) for key, val in inputs.items()}
-                
+
                 outputs = model(**inputs)
                 logits = outputs.logits
 
-                # Shift logits and labels for next-token prediction
-                shifted_logits = logits[..., :-1, :].contiguous()
-                labels = inputs['input_ids'][..., 1:].contiguous()
+                if method == "original":
+                    # Mesma lógica do evaluator_antigo (sem shift)
+                    for k in self.config['top_k_values']:
+                        top_k_preds_indices = torch.topk(logits, k, dim=-1).indices
+                        top_k_preds_indices = top_k_preds_indices.cpu().numpy()
 
-                for k in self.config['top_k_values']:
-                    top_k_preds = torch.topk(shifted_logits, k, dim=-1).indices
-                    
-                    # Check if the true next token is in the top-k predictions
-                    correct = torch.sum(top_k_preds == labels.unsqueeze(-1)).item()
-                    total = labels.numel()
-                    
-                    accuracies[f'top{k}'].append(correct / total if total > 0 else 0)
-        
+                        input_tokens = inputs['input_ids'][0].cpu().numpy()
+
+                        correct_predictions = sum(
+                            self._is_in_top_k(top_k_preds_indices[0, idx], token)
+                            for idx, token in enumerate(input_tokens)
+                        )
+                        total_tokens = len(input_tokens)
+
+                        accuracies[f'top{k}'].append(
+                            correct_predictions / total_tokens if total_tokens > 0 else 0
+                        )
+                else:
+                    # Método "shifted": próximo-token (mais canônico para LM)
+                    shifted_logits = logits[..., :-1, :].contiguous()
+                    labels = inputs['input_ids'][..., 1:].contiguous()
+
+                    for k in self.config['top_k_values']:
+                        top_k_preds = torch.topk(shifted_logits, k, dim=-1).indices
+
+                        # Check if the true next token is in the top-k predictions
+                        correct = torch.sum(top_k_preds == labels.unsqueeze(-1)).item()
+                        total = labels.numel()
+
+                        accuracies[f'top{k}'].append(
+                            correct / total if total > 0 else 0
+                        )
+
         return pd.DataFrame(accuracies)
 
     def _compute_temporal_metrics(self, preds, round_num, k):

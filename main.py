@@ -5,7 +5,8 @@ from src.data_processing.ransomlog_processor import RansomLogProcessor
 from src.data_processing.hdfs_processor import HDFSProcessor
 from src.data_processing.edge_ransomware_processor import EdgeRansomwareProcessor
 from src.federated_learning.server import FederatedServer
-from src.evaluation.evaluator_antigo import Evaluator
+from src.evaluation.evaluator_antigo import Evaluator as OldEvaluator
+from src.evaluation.evaluator import Evaluator as NewEvaluator
 
 def main(config_path):
     """
@@ -43,10 +44,19 @@ def main(config_path):
     print("--- Federated Training Complete ---")
 
     # 4. Execute Evaluation
-    print("\n--- Starting Evaluation ---")
-    evaluator = Evaluator(config)
-    evaluator.evaluate()
-    print("--- Evaluation Complete ---")
+    evaluator_mode = config.get("evaluator_version", "old")
+
+    if evaluator_mode in ["old", "both"]:
+        print("\n--- Starting Evaluation (Antigo) ---")
+        old_evaluator = OldEvaluator(config)
+        old_evaluator.evaluate()
+        print("--- Evaluation (Antigo) Complete ---")
+
+    if evaluator_mode in ["new", "both"]:
+        print("\n--- Starting Evaluation (Novo) ---")
+        new_evaluator = NewEvaluator(config)
+        new_evaluator.evaluate()
+        print("--- Evaluation (Novo) Complete ---")
 
 import multiprocessing as mp
 

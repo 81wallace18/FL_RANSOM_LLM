@@ -51,3 +51,9 @@ f1_threshold_steps: 1000
 
 # Enable temporal / early-stage evaluation metrics (TTD, FPR, coverage)
 enable_temporal_metrics: true
+
+# Evaluation behavior
+# - evaluator_version: "old", "new" ou "both" (quais avaliadores rodar)
+# - accuracy_method: "original" (igual evaluator_antigo) ou "shifted" (LM canônico)
+evaluator_version: "both"
+accuracy_method: "original"

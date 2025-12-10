@@ -23,9 +23,9 @@ lora_dropout: 0.1
 # --- Federated Learning Settings ---
 # HPC Mode: Parallel training enabled (Dual GPU).
 use_parallel_training: true
-num_rounds: 20
+num_rounds: 40
 num_clients: 50
-client_frac: 0.2
+client_frac: 0.3
 
 # Data distribution and client behavior
 #   data_distribution_strategy: 'iid', 'quantity_skew_dirichlet', or 'hetero_device'
@@ -38,10 +38,10 @@ use_weighted_aggregation: true
 
 # --- Client Training Settings ---
 # Optimized for RTX 4090: Small physical batch + Gradient Accumulation = Large effective batch.
-max_steps: 50
+max_steps: 75
 batch_size: 4
 gradient_accumulation_steps: 32
-initial_lr: 0.001
+initial_lr: 0.0005
 min_lr: 0.00001
 lr_scheduler_type: 'cosine'
 

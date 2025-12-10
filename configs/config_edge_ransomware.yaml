@@ -14,7 +14,7 @@ session_window_spliter: " ;-; "
 force_reprocess_data: False
 
 # --- Model Settings ---
-model_name: "HuggingFaceTB/SmolLM-135M"
+model_name: "./models/SmolLM-135M"
 lora: True
 lora_rank: 8
 lora_alpha_multiplier: 2

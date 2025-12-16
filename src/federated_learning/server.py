@@ -2,6 +2,7 @@ import os
 import random
 import math
 import json
+import csv
 import torch
 from datasets import load_from_disk
 import concurrent.futures
@@ -40,6 +41,69 @@ class FederatedServer:
         # Mantém metadados sobre o tamanho de cada shard de cliente para
         # permitir seleção adaptativa e agregação ponderada.
         self.client_sample_counts = {}
+
+        # Métricas de custo de comunicação por rodada (tamanho dos updates)
+        self.communication_metrics = []
+
+    def _weights_size_bytes(self, weights_dict):
+        """Returns total serialized size in bytes for a state_dict-like object."""
+        total = 0
+        if not weights_dict:
+            return 0
+        for v in weights_dict.values():
+            if isinstance(v, torch.Tensor):
+                total += int(v.numel()) * int(v.element_size())
+        return int(total)
+
+    def _weights_num_params(self, weights_dict):
+        total = 0
+        if not weights_dict:
+            return 0
+        for v in weights_dict.values():
+            if isinstance(v, torch.Tensor):
+                total += int(v.numel())
+        return int(total)
+
+    def _record_round_communication(self, round_num, client_ids, client_updates):
+        sizes = [self._weights_size_bytes(u) for u in client_updates]
+        params = [self._weights_num_params(u) for u in client_updates]
+        total_bytes = int(sum(sizes))
+        total_params = int(sum(params))
+
+        if sizes:
+            sizes_sorted = sorted(sizes)
+            median_bytes = float(sizes_sorted[len(sizes_sorted) // 2])
+            mean_bytes = float(total_bytes / len(sizes_sorted))
+        else:
+            median_bytes = float('nan')
+            mean_bytes = float('nan')
+
+        self.communication_metrics.append({
+            'round': int(round_num),
+            'num_selected_clients': int(len(client_ids)),
+            'lora': bool(self.config.get('lora', False)),
+            'lora_rank': int(self.config.get('lora_rank', 0)) if self.config.get('lora', False) else 0,
+            'use_weighted_aggregation': bool(self.config.get('use_weighted_aggregation', False)),
+            'client_selection_strategy': str(self.config.get('client_selection_strategy', 'uniform')),
+            'data_distribution_strategy': str(self.config.get('data_distribution_strategy', 'iid')),
+            'bytes_total': total_bytes,
+            'bytes_mean_per_client': mean_bytes,
+            'bytes_median_per_client': median_bytes,
+            'params_total': total_params,
+        })
+
+    def _save_communication_metrics(self):
+        if not self.communication_metrics:
+            return
+        out_dir = os.path.join(self.config['results_path'], self.config['simulation_name'])
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(out_dir, 'communication_metrics.csv')
+        fieldnames = list(self.communication_metrics[0].keys())
+        with open(out_path, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(self.communication_metrics)
+        print(f"Communication metrics saved to: {out_path}")
 
     def _split_data_for_clients(self):
         """
@@ -146,6 +210,26 @@ class FederatedServer:
             for idx in indices:
                 chosen = random.choices(clients, weights=weights, k=1)[0]
                 client_splits[chosen].append(idx)
+        elif strategy == 'by_src_ip':
+            # Distribui por dispositivo (src_ip), criando um cenário Non-IID mais forte:
+            # cada "dispositivo" (src_ip) fica inteiro em um único cliente.
+            if 'src_ip' not in dataset.column_names:
+                print("Warning: 'src_ip' column not found in tokenized dataset. Falling back to IID split.")
+                for i in range(num_clients):
+                    client_splits[i] = indices[i::num_clients]
+            else:
+                src_ips = dataset['src_ip']
+                ip_to_indices = {}
+                for idx in indices:
+                    ip = src_ips[idx]
+                    ip_to_indices.setdefault(ip, []).append(idx)
+
+                unique_ips = list(ip_to_indices.keys())
+                random.shuffle(unique_ips)
+
+                for i, ip in enumerate(unique_ips):
+                    client_id = i % num_clients
+                    client_splits[client_id].extend(ip_to_indices[ip])
         else:
             print(f"Warning: Unknown data_distribution_strategy='{strategy}', falling back to IID.")
             for i in range(num_clients):
@@ -278,6 +362,8 @@ class FederatedServer:
         else:
             self._run_sequential_training()
 
+        self._save_communication_metrics()
+
     def _run_sequential_training(self):
         """Executes training sequentially in the main process."""
         print("--- Running in Sequential Mode ---")
@@ -298,6 +384,9 @@ class FederatedServer:
             
             print("Aggregating client models...")
             self._aggregate_models(client_weights_list, successful_client_ids)
+
+            # Communication metrics (bytes communicated this round)
+            self._record_round_communication(round_num, successful_client_ids, client_weights_list)
             
             round_model_path = os.path.join(
                 self.config['results_path'], self.config['simulation_name'],
@@ -361,6 +450,9 @@ class FederatedServer:
 
             print("Aggregating client models...")
             self._aggregate_models(client_weights_list, successful_client_ids)
+
+            # Communication metrics (bytes communicated this round)
+            self._record_round_communication(round_num, successful_client_ids, client_weights_list)
             
             round_model_path = os.path.join(
                 self.config['results_path'], self.config['simulation_name'],

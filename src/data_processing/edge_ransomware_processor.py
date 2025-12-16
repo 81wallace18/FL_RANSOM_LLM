@@ -158,19 +158,26 @@ class EdgeRansomwareProcessor(BaseProcessor):
             print("Warning: No normal data (Label == 0) found for training.")
             return
 
-        dataset = Dataset.from_pandas(df_normal[["Content"]].rename(columns={"Content": "text"}))
+        # Mantém metadados úteis para estratégias Non-IID por dispositivo no FL.
+        # Essas colunas NÃO são usadas no forward do modelo (Trainer remove colunas
+        # não utilizadas quando remove_unused_columns=True).
+        dataset = Dataset.from_pandas(
+            df_normal[["Content", "Src IP", "Timestamp"]].rename(
+                columns={"Content": "text", "Src IP": "src_ip", "Timestamp": "timestamp"}
+            )
+        )
 
         tokenizer = AutoTokenizer.from_pretrained(self.config["model_name"])
         tokenizer.pad_token = tokenizer.eos_token
 
         def preprocess_function(examples):
             examples["text"] = [text + tokenizer.eos_token for text in examples["text"]]
-            # Use a shorter maximum sequence length to reduce VRAM usage.
+            max_len = int(self.config.get("max_length", self.config.get("eval_max_length", 1024)))
             return tokenizer(
                 examples["text"],
                 padding="max_length",
                 truncation=True,
-                max_length=1024,
+                max_length=max_len,
             )
 
         tokenized = dataset.map(preprocess_function, batched=True, remove_columns=["text"])

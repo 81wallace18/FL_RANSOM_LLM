@@ -28,7 +28,7 @@ num_clients: 50
 client_frac: 0.3
 
 # Data distribution and client behavior
-#   data_distribution_strategy: 'iid', 'quantity_skew_dirichlet', or 'hetero_device'
+#   data_distribution_strategy: 'iid', 'quantity_skew_dirichlet', 'hetero_device', or 'by_src_ip'
 data_distribution_strategy: "hetero_device"
 non_iid_alpha: 0.5          # Used only for 'quantity_skew_dirichlet'
 
@@ -51,6 +51,29 @@ f1_threshold_steps: 1000
 
 # Enable temporal / early-stage evaluation metrics (TTD, FPR, coverage)
 enable_temporal_metrics: true
+
+# --- Decision / Thresholding (operational vs oracle) ---
+# threshold_selection:
+#   - "f1_max": escolhe limiar maximizando F1 no teste (usa rótulos; bom para comparação, ruim operacionalmente)
+#   - "fpr_target": calibra limiar em benigno para atingir um FPR-alvo (não usa rótulos de ataque)
+threshold_selection: "f1_max"
+fpr_target: 0.01
+calibration_source: "train_benign"     # "train_benign" or "test_benign"
+calibration_num_samples: 2000
+
+# --- Temporal aggregation (windowed evaluation) ---
+# temporal_eval_mode:
+#   - "flow": cada fluxo é uma amostra (padrão atual)
+#   - "window": agrega fluxos por janela temporal por dispositivo (Src IP)
+temporal_eval_mode: "flow"
+temporal_window_seconds: 30
+temporal_window_agg: "mean"            # "mean", "min", "p10", "p25"
+
+# --- Inference benchmark (deployability) ---
+benchmark_inference: false
+benchmark_rounds: [0, 40]
+benchmark_num_samples: 200
+benchmark_warmup: 10
 
 # Evaluation behavior
 #  - evaluator_version: "old", "new" ou "both" (quais avaliadores rodar)

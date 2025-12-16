@@ -47,11 +47,32 @@ class Evaluator:
         labels = balanced_df["Label"].tolist()
         return content, labels
 
+    def _load_calibration_benign(self):
+        """
+        Loads benign-only calibration data from processed/train.csv (recommended),
+        used when threshold_selection == 'fpr_target'.
+        """
+        source = self.config.get('calibration_source', 'train_benign')
+        split = "train" if source == "train_benign" else "test"
+        path = os.path.join(
+            self.config['data_base_path'],
+            self.config['dataset_name'],
+            'processed',
+            f'{split}.csv'
+        )
+        df = pd.read_csv(path)
+        if 'Label' in df.columns:
+            df = df[df['Label'] == 0].copy()
+        n = int(self.config.get('calibration_num_samples', 2000))
+        if n > 0 and len(df) > n:
+            df = df.sample(n=n, random_state=0).reset_index(drop=True)
+        return [str(i) for i in df["Content"].tolist()]
+
     def _is_in_top_k(self, top_k_preds, target_token):
         """Helper function from the original script."""
         return target_token in top_k_preds
 
-    def _calculate_top_k_accuracy(self, model, tokenizer):
+    def _calculate_top_k_accuracy(self, model, tokenizer, texts=None):
         """
         Calculates top-k accuracy using the original script's logic.
         It does NOT shift the tokens for next-token prediction.
@@ -61,9 +82,11 @@ class Evaluator:
         model.to(self.device)
         model.eval()
 
-        total_texts = len(self.test_content)
+        if texts is None:
+            texts = self.test_content
+        total_texts = len(texts)
         with torch.no_grad():
-            for i, text in enumerate(self.test_content):
+            for i, text in enumerate(texts):
                 if (i + 1) % 100 == 0:
                     print(f"\r  Calculating accuracy (Antigo Method)... {i + 1}/{total_texts}", end="")
 
@@ -96,6 +119,7 @@ class Evaluator:
         tokenizer.pad_token = tokenizer.eos_token
 
         all_f1_results = []
+        threshold_mode = self.config.get('threshold_selection', 'f1_max')
 
         for round_num in range(1, self.config['num_rounds'] + 1):
             print(f"\n--- Evaluating Round {round_num} (Antigo Method) ---")
@@ -113,32 +137,52 @@ class Evaluator:
 
             acc_df = self._calculate_top_k_accuracy(model, tokenizer)
             acc_df['label'] = self.test_labels
+
+            calib_acc_df = None
+            if threshold_mode == 'fpr_target':
+                calib_texts = self._load_calibration_benign()
+                if calib_texts:
+                    calib_acc_df = self._calculate_top_k_accuracy(model, tokenizer, calib_texts)
             
             for k in self.config['top_k_values']:
-                best_f1 = 0
-                best_th = 0
-                thresholds = np.linspace(0, 1, self.config['f1_threshold_steps'])
-                
-                for th in thresholds:
-                    preds = (acc_df[f'top{k}'] < th).astype(int)
-                    f1 = f1_score(acc_df['label'], preds)
-                    if f1 > best_f1:
-                        best_f1 = f1
-                        best_th = th
-                
-                final_preds = (acc_df[f'top{k}'] < best_th).astype(int)
-                precision = precision_score(acc_df['label'], final_preds)
-                recall = recall_score(acc_df['label'], final_preds)
+                scores = acc_df[f'top{k}'].values
+                labels = np.array(acc_df['label'].values)
 
-                print(f"  K={k}: Best F1={best_f1:.4f} at Threshold={best_th:.4f}")
+                if threshold_mode == 'fpr_target' and calib_acc_df is not None:
+                    target = float(self.config.get('fpr_target', 0.01))
+                    target = min(max(target, 0.0), 1.0)
+                    th = float(np.quantile(calib_acc_df[f'top{k}'].values, target))
+                    preds = (scores < th).astype(int)
+                    f1 = float(f1_score(labels, preds))
+                else:
+                    thresholds = np.linspace(0, 1, int(self.config['f1_threshold_steps']))
+                    best_f1 = -1.0
+                    th = 0.0
+                    for cand in thresholds:
+                        preds = (scores < cand).astype(int)
+                        f1_cand = f1_score(labels, preds)
+                        if f1_cand > best_f1:
+                            best_f1 = f1_cand
+                            th = float(cand)
+                    preds = (scores < th).astype(int)
+                    f1 = float(best_f1)
+
+                precision = float(precision_score(labels, preds))
+                recall = float(recall_score(labels, preds))
+                benign_fpr = float((preds[labels == 0] == 1).mean()) if (labels == 0).any() else float('nan')
+
+                print(f"  K={k}: F1={f1:.4f} at Threshold={th:.4f} ({threshold_mode})")
                 
                 all_f1_results.append({
                     'round': round_num,
                     'k': k,
-                    'f1_score': best_f1,
-                    'threshold': best_th,
+                    'threshold_mode': threshold_mode,
+                    'fpr_target': float(self.config.get('fpr_target', np.nan)) if threshold_mode == 'fpr_target' else np.nan,
+                    'f1_score': f1,
+                    'threshold': th,
                     'precision': precision,
-                    'recall': recall
+                    'recall': recall,
+                    'benign_fpr': benign_fpr,
                 })
 
         f1_df = pd.DataFrame(all_f1_results)

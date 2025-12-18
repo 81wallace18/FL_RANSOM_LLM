@@ -11,7 +11,7 @@ results_path: "./results/"
 
 # --- Data Processing Settings ---
 session_window_spliter: " ;-; "
-force_reprocess_data: False
+force_reprocess_data: True
 
 # --- Model Settings ---
 model_name: "HuggingFaceTB/SmolLM-135M"
@@ -56,7 +56,7 @@ enable_temporal_metrics: true
 # threshold_selection:
 #   - "f1_max": escolhe limiar maximizando F1 no teste (usa rótulos; bom para comparação, ruim operacionalmente)
 #   - "fpr_target": calibra limiar em benigno para atingir um FPR-alvo (não usa rótulos de ataque)
-threshold_selection: "f1_max"
+threshold_selection: "fpr_target"
 fpr_target: 0.01
 calibration_source: "train_benign"     # "train_benign" or "test_benign"
 calibration_num_samples: 2000
@@ -65,7 +65,7 @@ calibration_num_samples: 2000
 # temporal_eval_mode:
 #   - "flow": cada fluxo é uma amostra (padrão atual)
 #   - "window": agrega fluxos por janela temporal por dispositivo (Src IP)
-temporal_eval_mode: "flow"
+temporal_eval_mode: "window"
 temporal_window_seconds: 30
 temporal_window_agg: "mean"            # "mean", "min", "p10", "p25"
 

@@ -1,8 +1,10 @@
 import os
 import re
 import pandas as pd
+import numpy as np
 from datasets import Dataset, DatasetDict
 from transformers import AutoTokenizer
+from sklearn.model_selection import train_test_split
 
 from .base_processor import BaseProcessor
 
@@ -44,12 +46,6 @@ class EdgeRansomwareProcessor(BaseProcessor):
     def _build_text_from_row(self, row):
         """
         Builds a richer textual representation of a single flow.
-
-        Instead of apenas cabeçalhos e contagens brutas, expõe métricas que
-        capturam o comportamento do tráfego, como IAT, taxa de bytes,
-        variância de tamanho de pacotes e flags TCP. Esses campos funcionam
-        como “assinaturas” de ransomware e foram fundamentais para melhorar
-        o F1 em experimentos anteriores.
         """
 
         def get_val(col_name):
@@ -57,30 +53,22 @@ class EdgeRansomwareProcessor(BaseProcessor):
 
         parts = [
             f"proto {get_val('Protocol')}",
-            f"duration {get_val('Flow Duration')}",
-            # Automação / periodicidade
-            f"iat_mean {get_val('Flow IAT Mean')}",
-            # Volume e velocidade de tráfego
+            f"dur {get_val('Flow Duration')}",
+            f"iat {get_val('Flow IAT Mean')}",
             f"pkts_fwd {get_val('Total Fwd Packet')}",
             f"pkts_bwd {get_val('Total Bwd packets')}",
-            f"bytes_rate {get_val('Flow Bytes/s')}",
-            # Padrões de tamanho de pacote (entropia / criptografia)
-            f"pkt_len_mean {get_val('Packet Length Mean')}",
-            f"pkt_len_var {get_val('Packet Length Variance')}",
-            # Comportamento de conexão (scanning / encerramento anômalo)
-            f"syn_flags {get_val('SYN Flag Count')}",
-            f"fin_flags {get_val('FIN Flag Count')}",
+            f"rate {get_val('Flow Bytes/s')}",
+            f"len_mean {get_val('Packet Length Mean')}",
+            f"len_var {get_val('Packet Length Variance')}",
+            f"syn {get_val('SYN Flag Count')}",
+            f"fin {get_val('FIN Flag Count')}",
         ]
         return " ".join(str(p) for p in parts)
 
     def create_sessions(self):
         """
         Creates sessions from the Edge-IIoTSet ransomware and benign flows.
-
-        For simplicidade e eficiência inicial, cada fluxo é tratado como
-        uma sessão individual, com seu conteúdo textual derivado dos campos
-        principais. Isso já é suficiente para treinar o LLM para distinguir
-        tráfego benigno de ransomware nesse contexto.
+        Groups by Src IP and chunks flows into sessions to capture temporal context.
         """
         benign_df, ransomware_df = self._load_raw_csvs()
 
@@ -89,29 +77,67 @@ class EdgeRansomwareProcessor(BaseProcessor):
         ransomware_df["Label"] = 1
 
         combined_df = pd.concat([benign_df, ransomware_df], ignore_index=True)
-
-        # Constrói a coluna textual "Content" a partir de um subconjunto de campos
+        
+        # Parse Timestamp
+        print("Parsing timestamps...")
+        combined_df['Timestamp'] = pd.to_datetime(combined_df['Timestamp'], format='%d/%m/%Y %I:%M:%S %p', errors='coerce')
+        combined_df = combined_df.dropna(subset=['Timestamp'])
+        
+        # Build textual representation
         print("Building textual representation for each flow...")
-        combined_df["Content"] = combined_df.apply(self._build_text_from_row, axis=1)
+        combined_df["FlowText"] = combined_df.apply(self._build_text_from_row, axis=1)
 
-        # Mantém as colunas necessárias para o pipeline e avaliação temporal
-        # (Content/Label para treino e métricas clássicas; Timestamp/Src IP/Attack Name
-        #  para métricas de detecção precoce e análise por dispositivo).
-        final_df = combined_df[
-            ["Flow ID", "Src IP", "Dst IP", "Timestamp", "Attack Name", "Content", "Label"]
-        ].copy()
+        sessions = []
+        labels = []
+        src_ips = []
+        timestamps = [] # Start time of session
 
-        # Embaralha e faz split treino/teste
-        final_df = final_df.sample(frac=1.0, random_state=42).reset_index(drop=True)
-        train_len = int(0.8 * len(final_df))
-        train_df = final_df[:train_len]
-        test_df = final_df[train_len:]
+        # Chunking configuration
+        chunk_size = 20
+        sep = " ;-; "
+
+        print("Grouping by Src IP and creating sessions...")
+        for src_ip, group in combined_df.groupby('Src IP'):
+            group = group.sort_values('Timestamp')
+            
+            group_texts = group['FlowText'].values
+            group_labels = group['Label'].values
+            group_times = group['Timestamp'].values
+            
+            for i in range(0, len(group_texts), chunk_size):
+                chunk_texts = group_texts[i:i+chunk_size]
+                chunk_labels = group_labels[i:i+chunk_size]
+                chunk_times = group_times[i:i+chunk_size]
+
+                # Join flows into one session string
+                session_str = sep.join(chunk_texts)
+                
+                # Malicious if any flow in chunk is malicious
+                is_malicious = 1 if 1 in chunk_labels else 0
+                
+                sessions.append(session_str)
+                labels.append(is_malicious)
+                src_ips.append(src_ip)
+                timestamps.append(chunk_times[0]) # Use start time of first flow
+
+        final_df = pd.DataFrame({
+            'Content': sessions,
+            'Label': labels,
+            'Src IP': src_ips,
+            'Timestamp': timestamps
+        })
+
+        print(f"Total sessions created: {len(final_df)}")
+        print(f"Label distribution:\n{final_df['Label'].value_counts()}")
+
+        # Stratified Split
+        train_df, test_df = train_test_split(final_df, test_size=0.2, random_state=42, stratify=final_df['Label'])
 
         os.makedirs(self.processed_path, exist_ok=True)
         train_df.to_csv(os.path.join(self.processed_path, "train.csv"), index=False)
         test_df.to_csv(os.path.join(self.processed_path, "test.csv"), index=False)
 
-        print(f"Created train.csv and test.csv in {self.processed_path}")
+        print(f"Created train.csv ({len(train_df)}) and test.csv ({len(test_df)}) in {self.processed_path}")
 
     def preprocess_and_sanitize(self):
         """

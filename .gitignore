@@ -1,14 +1,15 @@
 venv/
 __pycache__/
+results/
+
+# Data directories (processed and raw)
 data/hdfs/processed/*
 data/hdfs/raw/*
 data/ransomlog/processed/*
-data/ransomlog/raw/*  
-results/
-
+data/ransomlog/raw/*
 data/edge_ransomware/processed/*
-# data/ids_ransomware/raw/* 
-
+data/ids_ransomware/edge_ransomware/processed/*
+data/ids_ransomware/edge_ransomware/raw/*
 
 CLAUDE.md
 exemplos/

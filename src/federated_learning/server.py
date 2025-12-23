@@ -3,12 +3,28 @@ import random
 import math
 import json
 import csv
+import time
 import torch
 from datasets import load_from_disk
 import concurrent.futures
 
 from src.models.model_loader import initialize_global_model
 from .client import ClientTrainer
+
+
+def format_time(seconds):
+    """Formata segundos em formato legível (HH:MM:SS)."""
+    if seconds < 0:
+        return "--:--:--"
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    if hours > 0:
+        return f"{hours:02d}h {minutes:02d}m {secs:02d}s"
+    elif minutes > 0:
+        return f"{minutes:02d}m {secs:02d}s"
+    else:
+        return f"{secs:02d}s"
 
 def train_client_process(args):
     """
@@ -370,8 +386,24 @@ class FederatedServer:
     def _run_sequential_training(self):
         """Executes training sequentially in the main process."""
         print("--- Running in Sequential Mode ---")
-        for round_num in range(1, self.config['num_rounds'] + 1):
-            print(f"\n===== Starting Round {round_num}/{self.config['num_rounds']} =====")
+        total_rounds = self.config['num_rounds']
+        round_times = []
+        training_start = time.time()
+
+        for round_num in range(1, total_rounds + 1):
+            round_start = time.time()
+
+            # ETA calculation
+            if round_times:
+                avg_round_time = sum(round_times) / len(round_times)
+                eta_seconds = avg_round_time * (total_rounds - round_num + 1)
+                eta_str = format_time(eta_seconds)
+            else:
+                eta_str = "calculating..."
+
+            print(f"\n{'='*60}")
+            print(f"  Round {round_num}/{total_rounds} | ETA: {eta_str}")
+            print(f"{'='*60}")
 
             selected_clients_ids = self._select_clients_for_round(round_num)
 
@@ -384,20 +416,34 @@ class FederatedServer:
                 if cpu_weights:
                     client_weights_list.append(cpu_weights)
                     successful_client_ids.append(client_id)
-            
+
             print("Aggregating client models...")
             self._aggregate_models(client_weights_list, successful_client_ids)
 
             # Communication metrics (bytes communicated this round)
             self._record_round_communication(round_num, successful_client_ids, client_weights_list)
-            
+
             round_model_path = os.path.join(
                 self.config['results_path'], self.config['simulation_name'],
                 f'round_{round_num}', 'global_model'
             )
             os.makedirs(round_model_path, exist_ok=True)
             self.global_model.save_pretrained(round_model_path)
-            print(f"New global model for round {round_num} saved to: {round_model_path}")
+
+            # Time tracking
+            round_elapsed = time.time() - round_start
+            round_times.append(round_elapsed)
+            total_elapsed = time.time() - training_start
+
+            print(f"Round {round_num} completed in {format_time(round_elapsed)} | Total: {format_time(total_elapsed)}")
+
+        # Final summary
+        total_time = time.time() - training_start
+        print(f"\n{'='*60}")
+        print(f"  TRAINING COMPLETE")
+        print(f"  Total time: {format_time(total_time)}")
+        print(f"  Avg per round: {format_time(total_time / total_rounds)}")
+        print(f"{'='*60}")
 
     def _run_parallel_training(self):
         """Executes training in parallel across multiple GPUs."""
@@ -407,15 +453,31 @@ class FederatedServer:
             print("AVISO: Nenhuma GPU encontrada. Voltando para o modo sequencial.")
             self._run_sequential_training()
             return
-        
+
         print(f"Encontradas {num_gpus} GPUs. Distribuindo clientes entre elas.")
 
         def chunks(lst, n):
             for i in range(0, len(lst), n):
                 yield lst[i:i + n]
 
-        for round_num in range(1, self.config['num_rounds'] + 1):
-            print(f"\n===== Starting Round {round_num}/{self.config['num_rounds']} =====")
+        total_rounds = self.config['num_rounds']
+        round_times = []
+        training_start = time.time()
+
+        for round_num in range(1, total_rounds + 1):
+            round_start = time.time()
+
+            # ETA calculation
+            if round_times:
+                avg_round_time = sum(round_times) / len(round_times)
+                eta_seconds = avg_round_time * (total_rounds - round_num + 1)
+                eta_str = format_time(eta_seconds)
+            else:
+                eta_str = "calculating..."
+
+            print(f"\n{'='*60}")
+            print(f"  Round {round_num}/{total_rounds} | ETA: {eta_str}")
+            print(f"{'='*60}")
 
             selected_clients_ids = self._select_clients_for_round(round_num)
 
@@ -447,7 +509,7 @@ class FederatedServer:
                                 successful_client_ids.append(client_id)
                         except Exception as e:
                             print(f"Erro ao treinar cliente: {e}")
-            
+
             # Mover o modelo de volta para a GPU para agregação
             self.global_model.to(self.device)
 
@@ -456,11 +518,25 @@ class FederatedServer:
 
             # Communication metrics (bytes communicated this round)
             self._record_round_communication(round_num, successful_client_ids, client_weights_list)
-            
+
             round_model_path = os.path.join(
                 self.config['results_path'], self.config['simulation_name'],
                 f'round_{round_num}', 'global_model'
             )
             os.makedirs(round_model_path, exist_ok=True)
             self.global_model.save_pretrained(round_model_path)
-            print(f"New global model for round {round_num} saved to: {round_model_path}")
+
+            # Time tracking
+            round_elapsed = time.time() - round_start
+            round_times.append(round_elapsed)
+            total_elapsed = time.time() - training_start
+
+            print(f"Round {round_num} completed in {format_time(round_elapsed)} | Total: {format_time(total_elapsed)}")
+
+        # Final summary
+        total_time = time.time() - training_start
+        print(f"\n{'='*60}")
+        print(f"  TRAINING COMPLETE")
+        print(f"  Total time: {format_time(total_time)}")
+        print(f"  Avg per round: {format_time(total_time / total_rounds)}")
+        print(f"{'='*60}")

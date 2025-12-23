@@ -1,0 +1,95 @@
+ Análise e Recomendações para Melhorar a Acurácia
+
+  Baseado na análise do seu projeto e pesquisa de técnicas recentes, aqui estão as principais recomendações organizadas por área:
+
+  ---
+  1. Melhorias no LoRA (Mais Impacto Imediato)
+
+  | Técnica       | Status Atual | Recomendação                                           |
+  |---------------|--------------|--------------------------------------------------------|
+  | Rank          | 8            | Aumentar para 16 ou 32                                 |
+  | Alpha         | rank * 2     | Manter (já está correto)                               |
+  | Target Layers | Verificar    | Aplicar em todas as camadas lineares, não só attention |
+  | Epochs/Steps  | 10 steps     | Aumentar para 30-50 steps                              |
+
+  Nova alternativa interessante: https://towardsdatascience.com/are-you-still-using-lora-to-fine-tune-your-llm/ - técnicas baseadas em SVD que mostram melhor performance em datasets específicos com menos parâmetros.
+
+  ---
+  2. Substituir FedAvg por Algoritmos Mais Robustos
+
+  Seu projeto usa FedAvg, que sofre com dados Non-IID. Alternativas mais eficazes:
+
+  | Algoritmo                                                    | Vantagem                                            | Complexidade |
+  |--------------------------------------------------------------|-----------------------------------------------------|--------------|
+  | https://en.wikipedia.org/wiki/Federated_learning             | Adiciona termo proximal que reduz client drift      | Baixa        |
+  | https://pmc.ncbi.nlm.nih.gov/articles/PMC11523028/           | Regularização dinâmica, agnóstico à heterogeneidade | Média        |
+  | https://link.springer.com/article/10.1007/s10922-023-09782-9 | Agrupa clientes similares, ensemble learning        | Média        |
+  | https://arxiv.org/html/2305.10730                            | Recombina modelos ao invés de agregar               | Alta         |
+
+  Recomendação prioritária: Implementar FedProx - é a modificação mais simples:
+
+  # Adicionar ao loss do cliente:
+  proximal_term = (mu / 2) * sum((w_local - w_global)^2)
+  total_loss = task_loss + proximal_term
+
+  ---
+  3. Two-Stage Hybrid Framework
+
+  Uma técnica que mostrou 99.14% de acurácia em detecção de anomalias IoT:
+
+  1. Primeiro estágio: Seu modelo generativo (SmolLM) treinado em tráfego benigno
+  2. Segundo estágio: Classificador adicional (Histogram-based Gradient Boosting ou XGBoost) usando features extraídas
+
+  Referência: https://www.mdpi.com/2624-831X/6/3/48
+
+  ---
+  4. Melhorias no Threshold Selection
+
+  Sua implementação atual usa F1-Max ou FPR-Target. Uma técnica mais robusta:
+
+  https://www.nature.com/articles/s41598-024-76961-2: Agrega estatísticas (média, desvio padrão, quantis) dos scores de anomalia de todos os clientes para calcular um threshold global mais robusto, especialmente em cenários Non-IID.
+
+  ---
+  5. Server Learning Auxiliar
+
+  Adicionar dados auxiliares no servidor (mesmo que pequeno) melhora significativamente a convergência:
+
+  "Auxiliary server learning can achieve significant improvements in both model accuracy and convergence time even when the dataset utilized by the server is small." - https://pmc.ncbi.nlm.nih.gov/articles/PMC11523028/
+
+  ---
+  Plano de Implementação Sugerido (por ordem de impacto/esforço):
+
+  1. Fácil - Aumentar lora_rank para 16-32 e verificar target_modules
+  2. Fácil - Aumentar max_steps para 30-50
+  3. Médio - Implementar FedProx (adicionar termo proximal)
+  4. Médio - Melhorar threshold calculation com summary statistics
+  5. Avançado - Adicionar segundo estágio com classificador tradicional
+
+  Quer que eu implemente alguma dessas técnicas no seu código?
+
+  ---
+  Sources:
+  - https://magazine.sebastianraschka.com/p/practical-tips-for-finetuning-llms
+  - https://www.databricks.com/blog/efficient-fine-tuning-lora-guide-llms
+  - https://www.nature.com/articles/s41598-024-76961-2
+  - https://link.springer.com/article/10.1007/s10922-023-09782-9
+  - https://www.mdpi.com/2624-831X/6/3/48
+  - https://pmc.ncbi.nlm.nih.gov/articles/PMC11523028/
+  - https://arxiv.org/html/2305.10730
+
+- Federated Benign‑Only Ransomware Detection on IoT/Edge Network Flows with LoRA‑Tuned Small Language Models
+
+  Alternativas (mais curtas):
+
+  - Privacy‑Preserving Ransomware Detection at the Edge via Federated LoRA Fine‑Tuning of Small Language Models
+  - Toward Deployable Ransomware Detection in IoT/Edge: Federated Benign‑Only Language Modeling on Network Flows
+
+
+ Para a versão final, você provavelmente ainda vai precisar adicionar (mesmo que não sejam “related work”) pelo menos:
+
+  - FedAvg / Federated Learning (McMahan et al., 2017)
+  - LoRA (Hu et al., 2021)
+  - Edge-IIoTSet dataset paper (Ferrag et al., 2022 — dataset, não o SecurityBERT)
+  - SmolLM (se você citar a família/modelo com referência formal)
+
+

@@ -183,6 +183,9 @@ class Evaluator:
                     'precision': precision,
                     'recall': recall,
                     'benign_fpr': benign_fpr,
+                    # FedProx parameters for comparison
+                    'fedprox_mu': float(self.config.get('fedprox_mu', 0.0)),
+                    'aggregation_method': 'FedProx' if self.config.get('fedprox_mu', 0.0) > 0 else 'FedAvg',
                 })
 
         f1_df = pd.DataFrame(all_f1_results)

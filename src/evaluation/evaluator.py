@@ -228,6 +228,9 @@ class Evaluator:
             'mean_ms_per_sample': mean_ms,
             'std_ms_per_sample': std_ms,
             'peak_cuda_memory_mb': peak_mb,
+            # FedProx parameters for comparison
+            'fedprox_mu': float(self.config.get('fedprox_mu', 0.0)),
+            'aggregation_method': 'FedProx' if self.config.get('fedprox_mu', 0.0) > 0 else 'FedAvg',
         }
 
     def _compute_temporal_metrics_from_df(self, df, round_num, k, *, granularity):
@@ -290,7 +293,10 @@ class Evaluator:
             'median_ttd_seconds': median_ttd,
             'detection_coverage': detection_coverage_ratio,
             'benign_fpr': benign_fpr,
-            'num_attacked_devices': attacked_devices
+            'num_attacked_devices': attacked_devices,
+            # FedProx parameters for comparison
+            'fedprox_mu': float(self.config.get('fedprox_mu', 0.0)),
+            'aggregation_method': 'FedProx' if self.config.get('fedprox_mu', 0.0) > 0 else 'FedAvg',
         }
 
     def _compute_temporal_metrics(self, preds, round_num, k):
@@ -464,6 +470,9 @@ class Evaluator:
                         'recall': recall,
                         'benign_fpr': benign_fpr,
                         'num_windows': int(len(window_df)),
+                        # FedProx parameters for comparison
+                        'fedprox_mu': float(self.config.get('fedprox_mu', 0.0)),
+                        'aggregation_method': 'FedProx' if self.config.get('fedprox_mu', 0.0) > 0 else 'FedAvg',
                     })
 
                     if self.config.get('enable_temporal_metrics', True):
@@ -504,6 +513,9 @@ class Evaluator:
                         'precision': precision,
                         'recall': recall,
                         'benign_fpr': benign_fpr,
+                        # FedProx parameters for comparison
+                        'fedprox_mu': float(self.config.get('fedprox_mu', 0.0)),
+                        'aggregation_method': 'FedProx' if self.config.get('fedprox_mu', 0.0) > 0 else 'FedAvg',
                     })
 
                     if self.config.get('enable_temporal_metrics', True):

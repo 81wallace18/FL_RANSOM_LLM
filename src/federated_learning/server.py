@@ -86,6 +86,9 @@ class FederatedServer:
             'use_weighted_aggregation': bool(self.config.get('use_weighted_aggregation', False)),
             'client_selection_strategy': str(self.config.get('client_selection_strategy', 'uniform')),
             'data_distribution_strategy': str(self.config.get('data_distribution_strategy', 'iid')),
+            # FedProx parameters
+            'fedprox_mu': float(self.config.get('fedprox_mu', 0.0)),
+            'aggregation_method': 'FedProx' if self.config.get('fedprox_mu', 0.0) > 0 else 'FedAvg',
             'bytes_total': total_bytes,
             'bytes_mean_per_client': mean_bytes,
             'bytes_median_per_client': median_bytes,

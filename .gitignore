@@ -6,7 +6,7 @@ data/ransomlog/processed/*
 data/ransomlog/raw/*  
 results/
 
-data/ids_ransomware/processed/*
+data/edge_ransomware/processed/*
 # data/ids_ransomware/raw/* 
 
 

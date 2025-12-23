@@ -39,6 +39,11 @@ non_iid_alpha: 0.5          # Used only for 'quantity_skew_dirichlet'
 client_selection_strategy: "uniform"  # or 'data_size_proportional'
 use_weighted_aggregation: false
 
+# FedProx regularization (reduces client drift in Non-IID scenarios)
+# Set fedprox_mu > 0 to enable. Recommended values: 0.001, 0.01, 0.1
+# Reference: https://arxiv.org/abs/1812.06127
+fedprox_mu: 0.0  # Disabled for IID scenario
+
 # --- Client Training Settings ---
 max_steps: 10
 batch_size: 32

@@ -26,6 +26,19 @@ num_rounds: 50
 num_clients: 50
 client_frac: 0.1
 
+# Data distribution and client behavior
+data_distribution_strategy: "iid"
+non_iid_alpha: 0.5
+
+# Client selection and aggregation
+client_selection_strategy: "uniform"
+use_weighted_aggregation: false
+
+# FedProx regularization (reduces client drift in Non-IID scenarios)
+# Set fedprox_mu > 0 to enable. Recommended values: 0.001, 0.01, 0.1
+# Reference: https://arxiv.org/abs/1812.06127
+fedprox_mu: 0.0  # Disabled for IID scenario
+
 # --- Client Training Settings ---
 max_steps: 10
 batch_size: 8

@@ -1,9 +1,9 @@
 # configs/config_edge_ransomware.yaml
 
 # --- General Experiment Settings ---
-simulation_name: "EdgeRansomware_SmolLM135M_LoRA_R8"
+simulation_name: "EdgeRansomware_SmolLM135M_FedProx"
 dataset_name: "edge_ransomware"
-description: "Experiment with CIC-BCCC-NRC-Edge-IIoTSet-2022 (Benign vs Ransomware) using SmolLM-135M and LoRA rank 8."
+description: "FedProx experiment with CIC-BCCC-NRC-Edge-IIoTSet-2022 using SmolLM-135M, LoRA rank 16, and FedProx mu=0.01."
 
 # --- Paths ---
 data_base_path: "./data/ids_ransomware/"
@@ -16,8 +16,8 @@ force_reprocess_data: False
 # --- Model Settings ---
 model_name: "HuggingFaceTB/SmolLM-135M"
 lora: True
-lora_rank: 32
-lora_alpha_multiplier: 4
+lora_rank: 16                # Optimized: 16 balances performance and communication cost
+lora_alpha_multiplier: 2     # alpha = 32 (2x rank)
 lora_dropout: 0.1
 
 # --- Federated Learning Settings ---
@@ -36,9 +36,14 @@ non_iid_alpha: 0.5          # Used only for 'quantity_skew_dirichlet'
 client_selection_strategy: "data_size_proportional"  # or 'uniform'
 use_weighted_aggregation: true
 
+# FedProx regularization (reduces client drift in Non-IID scenarios)
+# Set fedprox_mu > 0 to enable. Recommended values: 0.001, 0.01, 0.1
+# Reference: https://arxiv.org/abs/1812.06127
+fedprox_mu: 0.01
+
 # --- Client Training Settings ---
 # Optimized for RTX 4090: Small physical batch + Gradient Accumulation = Large effective batch.
-max_steps: 75
+max_steps: 50                # Reduced from 75 to prevent overfitting per round
 batch_size: 4
 gradient_accumulation_steps: 32
 initial_lr: 0.0005

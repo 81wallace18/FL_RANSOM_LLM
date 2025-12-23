@@ -1,0 +1,59 @@
+# configs/config_test_fedprox.yaml
+# Quick test config to validate FedProx vs FedAvg before full experiment
+
+# --- General Experiment Settings ---
+simulation_name: "TEST_FedProx_Quick"
+dataset_name: "edge_ransomware"
+description: "Quick test: FedProx mu=0.01 (10 rounds only)"
+
+# --- Paths ---
+data_base_path: "./data/ids_ransomware/"
+results_path: "./results/"
+
+# --- Data Processing Settings ---
+session_window_spliter: " ;-; "
+force_reprocess_data: False
+
+# --- Model Settings ---
+model_name: "HuggingFaceTB/SmolLM-135M"
+lora: True
+lora_rank: 16
+lora_alpha_multiplier: 2
+lora_dropout: 0.1
+
+# --- Federated Learning Settings ---
+use_parallel_training: true
+num_rounds: 10           # Quick test: 10 rounds
+num_clients: 20          # Reduced clients
+client_frac: 0.3
+
+# Data distribution (Non-IID to test FedProx benefit)
+data_distribution_strategy: "hetero_device"
+non_iid_alpha: 0.5
+
+# Client selection and aggregation
+client_selection_strategy: "data_size_proportional"
+use_weighted_aggregation: true
+
+# FedProx ENABLED
+fedprox_mu: 0.01
+
+# --- Client Training Settings ---
+max_steps: 25            # Reduced for quick test
+batch_size: 4
+gradient_accumulation_steps: 32
+initial_lr: 0.0005
+min_lr: 0.00001
+lr_scheduler_type: 'cosine'
+
+# --- Evaluation Settings ---
+top_k_values: [1, 3, 5]
+f1_threshold_steps: 500
+enable_temporal_metrics: false   # Disable for speed
+
+# Threshold
+threshold_selection: "f1_max"
+
+# Evaluation behavior
+evaluator_version: "new"
+accuracy_method: "original"

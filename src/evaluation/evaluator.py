@@ -327,8 +327,12 @@ class Evaluator:
         agg = str(self.config.get('temporal_window_agg', 'mean')).lower()
         if series.empty:
             return float('nan')
+        if agg == 'max':
+            return float(series.max())
         if agg == 'min':
             return float(series.min())
+        if agg == 'p90':
+            return float(np.quantile(series.values, 0.90))
         if agg == 'p10':
             return float(np.quantile(series.values, 0.10))
         if agg == 'p25':

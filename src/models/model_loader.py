@@ -30,12 +30,19 @@ def initialize_global_model(config):
 
     if use_lora:
         print(f"Applying LoRA with rank={config['lora_rank']}...")
+        target_modules = config.get("lora_target_modules", None)
+        if isinstance(target_modules, str):
+            # allow comma-separated string in YAML
+            target_modules = [m.strip() for m in target_modules.split(",") if m.strip()]
+        if target_modules:
+            print(f"  LoRA target_modules: {target_modules}")
         lora_config = LoraConfig(
             r=config['lora_rank'],
             lora_alpha=config['lora_rank'] * config['lora_alpha_multiplier'],
             lora_dropout=config['lora_dropout'],
             bias="none",
-            task_type="CAUSAL_LM"
+            task_type="CAUSAL_LM",
+            target_modules=target_modules,
         )
         model = get_peft_model(model, lora_config)
         print("LoRA applied successfully.")

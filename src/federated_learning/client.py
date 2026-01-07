@@ -113,7 +113,7 @@ class ClientTrainer:
             if self.use_lora:
                 model = AutoModelForCausalLM.from_pretrained(
                     self.model_name,
-                    dtype=torch.float16,
+                    torch_dtype=torch.float16,
                 )
                 if torch.cuda.is_available():
                     model = model.to(f"cuda:{self.gpu_id}")
@@ -169,6 +169,8 @@ class ClientTrainer:
             per_device_train_batch_size=self.config['batch_size'],
             gradient_accumulation_steps=self.config.get('gradient_accumulation_steps', 1),
             lr_scheduler_type=self.config['lr_scheduler_type'],
+            warmup_ratio=float(self.config.get('warmup_ratio', 0.0)),
+            max_grad_norm=float(self.config.get('max_grad_norm', 1.0)),
             save_strategy="no",  # We save manually
         )
 

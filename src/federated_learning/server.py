@@ -5,6 +5,7 @@ import json
 import csv
 import time
 import torch
+import numpy as np
 from datasets import load_from_disk
 import concurrent.futures
 
@@ -350,19 +351,31 @@ class FederatedServer:
         strategy = self.config.get('client_selection_strategy', 'uniform')
 
         if strategy == 'data_size_proportional' and self.client_sample_counts:
-            counts = [self.client_sample_counts.get(cid, 0) for cid in all_clients]
-            total = sum(counts)
-            if total <= 0:
+            eligible = [(cid, self.client_sample_counts.get(cid, 0)) for cid in all_clients]
+            eligible = [(cid, c) for cid, c in eligible if c > 0]
+            if not eligible:
                 print("Warning: Invalid or zero client sample counts. Falling back to uniform selection.")
                 return random.sample(all_clients, num_selected_clients)
 
-            probabilities = [c / total for c in counts]
-            selected_clients = set()
-            # Garante seleção sem reposição usando amostragem ponderada
-            while len(selected_clients) < num_selected_clients:
-                chosen = random.choices(all_clients, weights=probabilities, k=1)[0]
-                selected_clients.add(chosen)
-            selected_clients_ids = list(selected_clients)
+            eligible_clients, eligible_counts = zip(*eligible)
+            total = float(sum(eligible_counts))
+            probabilities = [float(c) / total for c in eligible_counts]
+
+            if num_selected_clients > len(eligible_clients):
+                print(
+                    "Warning: Requested more clients than those with data "
+                    f"({num_selected_clients} > {len(eligible_clients)}). Capping selection."
+                )
+                num_selected_clients = len(eligible_clients)
+
+            # Weighted sampling without replacement.
+            rng = np.random.default_rng(seed=int(round_num))
+            selected_clients_ids = rng.choice(
+                np.array(eligible_clients, dtype=int),
+                size=int(num_selected_clients),
+                replace=False,
+                p=np.array(probabilities, dtype=float),
+            ).tolist()
             print(f"Client selection strategy 'data_size_proportional' selected: {selected_clients_ids}")
             return selected_clients_ids
 

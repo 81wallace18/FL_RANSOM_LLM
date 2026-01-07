@@ -36,6 +36,19 @@ class Evaluator:
         # ]).sample(frac=1).reset_index(drop=True)
         return df
 
+    def _parse_timestamps(self, series: pd.Series) -> pd.Series:
+        """
+        Parses Edge-IIoTSet timestamps robustly.
+
+        The dataset commonly uses the format: '%d/%m/%Y %I:%M:%S %p'. We try that
+        first for consistency, then fall back to a more permissive parser.
+        """
+        ts = pd.to_datetime(series, format="%d/%m/%Y %I:%M:%S %p", errors="coerce")
+        missing = ts.isna()
+        if missing.any():
+            ts.loc[missing] = pd.to_datetime(series[missing], errors="coerce", dayfirst=True)
+        return ts
+
     def _load_calibration_data(self):
         """
         Loads a benign-only calibration set for operational threshold selection.
@@ -307,7 +320,7 @@ class Evaluator:
 
         df = self.test_df[['Timestamp', 'Src IP', 'Label']].copy()
         df['pred'] = preds.values if hasattr(preds, "values") else preds
-        df['Timestamp_parsed'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+        df['Timestamp_parsed'] = self._parse_timestamps(df['Timestamp'])
         return self._compute_temporal_metrics_from_df(df, round_num, k, granularity='flow')
 
     def _window_aggregate(self, series):
@@ -335,7 +348,7 @@ class Evaluator:
 
         df = base_df[['Timestamp', 'Src IP', 'Label']].copy()
         df['score'] = score_series.values
-        df['Timestamp_parsed'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+        df['Timestamp_parsed'] = self._parse_timestamps(df['Timestamp'])
         df = df.dropna(subset=['Timestamp_parsed'])
 
         # Group by device and time bin

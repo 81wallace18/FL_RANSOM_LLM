@@ -88,30 +88,43 @@ class EdgeRansomwareProcessor(BaseProcessor):
         benign_df["Label"] = 0
         ransomware_df["Label"] = 1
 
-        combined_df = pd.concat([benign_df, ransomware_df], ignore_index=True)
-
         # Constrói a coluna textual "Content" a partir de um subconjunto de campos
         print("Building textual representation for each flow...")
-        combined_df["Content"] = combined_df.apply(self._build_text_from_row, axis=1)
+        benign_df = benign_df.copy()
+        ransomware_df = ransomware_df.copy()
+        benign_df["Content"] = benign_df.apply(self._build_text_from_row, axis=1)
+        ransomware_df["Content"] = ransomware_df.apply(self._build_text_from_row, axis=1)
 
         # Mantém as colunas necessárias para o pipeline e avaliação temporal
         # (Content/Label para treino e métricas clássicas; Timestamp/Src IP/Attack Name
-        #  para métricas de detecção precoce e análise por dispositivo).
-        final_df = combined_df[
-            ["Flow ID", "Src IP", "Dst IP", "Timestamp", "Attack Name", "Content", "Label"]
-        ].copy()
+        #  para métricas de detecção temporal e análise por dispositivo).
+        cols = ["Flow ID", "Src IP", "Dst IP", "Timestamp", "Attack Name", "Content", "Label"]
+        benign_final = benign_df[cols].copy()
+        ransomware_final = ransomware_df[cols].copy()
 
-        # Embaralha e faz split treino/teste
-        final_df = final_df.sample(frac=1.0, random_state=42).reset_index(drop=True)
-        train_len = int(0.8 * len(final_df))
-        train_df = final_df[:train_len]
-        test_df = final_df[train_len:]
+        # Split paper-grade benign-only:
+        # - Treino: apenas benigno (benign-only training)
+        # - Teste: holdout benigno + TODO ransomware (evita "quebrar" o ataque no split)
+        benign_train_frac = float(self.config.get("benign_train_fraction", 0.8))
+        benign_train_frac = min(max(benign_train_frac, 0.0), 1.0)
+
+        benign_final = benign_final.sample(frac=1.0, random_state=42).reset_index(drop=True)
+        train_len = int(benign_train_frac * len(benign_final))
+
+        train_df = benign_final[:train_len].reset_index(drop=True)
+        benign_test_df = benign_final[train_len:].reset_index(drop=True)
+
+        test_df = pd.concat([benign_test_df, ransomware_final], ignore_index=True)
+        test_df = test_df.sample(frac=1.0, random_state=42).reset_index(drop=True)
 
         os.makedirs(self.processed_path, exist_ok=True)
         train_df.to_csv(os.path.join(self.processed_path, "train.csv"), index=False)
         test_df.to_csv(os.path.join(self.processed_path, "test.csv"), index=False)
 
-        print(f"Created train.csv and test.csv in {self.processed_path}")
+        print(
+            f"Created train.csv and test.csv in {self.processed_path} "
+            f"(train benign={len(train_df)}, test benign={len(benign_test_df)}, test ransomware={len(ransomware_final)})"
+        )
 
     def preprocess_and_sanitize(self):
         """
@@ -175,13 +188,11 @@ class EdgeRansomwareProcessor(BaseProcessor):
             max_len = int(self.config.get("max_length", self.config.get("eval_max_length", 1024)))
             return tokenizer(
                 examples["text"],
-                padding="max_length",
                 truncation=True,
                 max_length=max_len,
             )
 
         tokenized = dataset.map(preprocess_function, batched=True, remove_columns=["text"])
-        tokenized = tokenized.map(lambda x: {"labels": x["input_ids"]}, batched=True)
 
         final_dataset = DatasetDict({"train": tokenized})
         final_dataset.save_to_disk(self.tokenized_path)

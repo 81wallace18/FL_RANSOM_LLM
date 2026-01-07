@@ -11,7 +11,7 @@ results_path: "./results/"
 
 # --- Data Processing Settings ---
 session_window_spliter: " ;-; "
-force_reprocess_data: False
+force_reprocess_data: True
 
 # --- Model Settings ---
 model_name: "HuggingFaceTB/SmolLM-135M"

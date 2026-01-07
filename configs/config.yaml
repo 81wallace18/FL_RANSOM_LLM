@@ -15,7 +15,7 @@ results_path: "./results/"
 # For RansomLog, you might define session_type: 'time_window' or 'process_id'
 # and window_size: '5m'
 session_window_spliter: " ;-; "
-force_reprocess_data: False # If True, will re-run the data processing steps
+force_reprocess_data: True # If True, will re-run the data processing steps
 
 # --- Model Settings ---
 model_name: "HuggingFaceTB/SmolLM-135M"

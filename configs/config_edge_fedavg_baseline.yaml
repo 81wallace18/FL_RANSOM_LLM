@@ -12,7 +12,8 @@ results_path: "./results/"
 
 # --- Data Processing Settings ---
 session_window_spliter: " ;-; "
-force_reprocess_data: False
+force_reprocess_data: True
+benign_train_fraction: 0.8     # Split: train uses only benign; test = benign holdout + all ransomware
 
 # --- Model Settings ---
 model_name: "HuggingFaceTB/SmolLM-135M"
@@ -70,4 +71,4 @@ benchmark_warmup: 10
 
 # Evaluation behavior
 evaluator_version: "both"
-accuracy_method: "original"
+accuracy_method: "shifted"

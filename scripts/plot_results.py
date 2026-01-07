@@ -426,6 +426,13 @@ def main():
 
     args = parser.parse_args()
 
+    # Pequena higiene para evitar erro ao colar comandos com vírgula no final.
+    # Ex.: "--output_dir img/test/,".
+    for attr in ("results_dir", "fedprox", "fedavg", "output_dir"):
+        val = getattr(args, attr, None)
+        if isinstance(val, str):
+            setattr(args, attr, val.rstrip(","))
+
     # Cria diretório de saída
     os.makedirs(args.output_dir, exist_ok=True)
 

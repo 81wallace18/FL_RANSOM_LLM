@@ -127,10 +127,10 @@ class HDFSProcessor(BaseProcessor):
 
         def preprocess_function(examples):
             examples["text"] = [text + tokenizer.eos_token for text in examples["text"]]
-            return tokenizer(examples["text"], padding="max_length", truncation=True, max_length=1024)
+            max_len = int(self.config.get("max_length", self.config.get("eval_max_length", 1024)))
+            return tokenizer(examples["text"], truncation=True, max_length=max_len)
 
         tokenized_datasets = dataset.map(preprocess_function, batched=True, remove_columns=['text'])
-        tokenized_datasets = tokenized_datasets.map(lambda x: {"labels": x["input_ids"]}, batched=True)
         
         final_dataset = DatasetDict({"train": tokenized_datasets})
         final_dataset.save_to_disk(self.tokenized_path)

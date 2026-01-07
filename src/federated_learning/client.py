@@ -1,5 +1,7 @@
 import os
 import json
+from dataclasses import dataclass
+from typing import Any
 import torch
 from transformers import (
     AutoTokenizer,
@@ -9,8 +11,35 @@ from transformers import (
     Trainer,
     DataCollatorForLanguageModeling
 )
+from transformers.data.data_collator import pad_without_fast_tokenizer_warning
 from peft import PeftModel
 from datasets import load_from_disk
+
+
+@dataclass
+class CausalLMDataCollatorWithPadding:
+    """
+    Dynamic padding + label masking for causal language modeling.
+
+    We intentionally mask padded positions using attention_mask (not pad_token_id),
+    because this project sets pad_token = eos_token for GPT-like tokenizers.
+    """
+
+    tokenizer: Any
+    pad_to_multiple_of: int | None = None
+
+    def __call__(self, features: list[dict[str, Any]]) -> dict[str, Any]:
+        batch = pad_without_fast_tokenizer_warning(
+            self.tokenizer,
+            features,
+            padding=True,
+            return_tensors="pt",
+            pad_to_multiple_of=self.pad_to_multiple_of,
+        )
+        labels = batch["input_ids"].clone()
+        labels[batch["attention_mask"] == 0] = -100
+        batch["labels"] = labels
+        return batch
 
 
 class FedProxTrainer(Trainer):
@@ -74,21 +103,21 @@ class ClientTrainer:
 
         if 'bert' in self.model_name.lower():
             if self.use_lora:
-                device_map = {'': f'cuda:{self.gpu_id}'} if torch.cuda.is_available() else "auto"
-                model = AutoModelForMaskedLM.from_pretrained(self.model_name, device_map=device_map)
-                model = PeftModel.from_pretrained(model, model_path, is_trainable=True, device_map=device_map)
+                model = AutoModelForMaskedLM.from_pretrained(self.model_name)
+                if torch.cuda.is_available():
+                    model = model.to(f"cuda:{self.gpu_id}")
+                model = PeftModel.from_pretrained(model, model_path, is_trainable=True)
             else:
                 model = AutoModelForMaskedLM.from_pretrained(model_path)
         else:
             if self.use_lora:
-                # Mapeia explicitamente para a GPU correta usando o ID passado.
-                device_map = {'': f'cuda:{self.gpu_id}'} if torch.cuda.is_available() else "auto"
                 model = AutoModelForCausalLM.from_pretrained(
                     self.model_name,
                     dtype=torch.float16,
-                    device_map=device_map,
                 )
-                model = PeftModel.from_pretrained(model, model_path, is_trainable=True, device_map=device_map)
+                if torch.cuda.is_available():
+                    model = model.to(f"cuda:{self.gpu_id}")
+                model = PeftModel.from_pretrained(model, model_path, is_trainable=True)
             else:
                 model = AutoModelForCausalLM.from_pretrained(model_path)
         
@@ -110,6 +139,9 @@ class ClientTrainer:
             f'client_{self.client_id}'
         )
         client_dataset = load_from_disk(client_dataset_path)
+        if len(client_dataset) == 0:
+            print(f"  Client {self.client_id}: No local samples. Skipping training.")
+            return None
         client_dataset = client_dataset.shuffle(seed=round_num)
 
         # 2. Capture global model state for FedProx (before training)
@@ -163,6 +195,10 @@ class ClientTrainer:
                     data_collator=data_collator
                 )
         else:
+            tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            tokenizer.pad_token = tokenizer.eos_token
+            data_collator = CausalLMDataCollatorWithPadding(tokenizer=tokenizer)
+
             if fedprox_mu > 0:
                 trainer = FedProxTrainer(
                     global_state_dict=global_state_dict,
@@ -170,12 +206,14 @@ class ClientTrainer:
                     model=model,
                     args=training_args,
                     train_dataset=client_dataset,
+                    data_collator=data_collator,
                 )
             else:
                 trainer = Trainer(
                     model=model,
                     args=training_args,
                     train_dataset=client_dataset,
+                    data_collator=data_collator,
                 )
 
         # 5. Run Training

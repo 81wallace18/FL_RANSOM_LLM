@@ -242,9 +242,11 @@ class EdgeRansomwareProcessor(BaseProcessor):
         train_df.to_csv(os.path.join(self.processed_path, "train.csv"), index=False)
         test_df.to_csv(os.path.join(self.processed_path, "test.csv"), index=False)
 
+        test_benign = int((test_df["Label"] == 0).sum()) if "Label" in test_df.columns else 0
+        test_ransomware = int((test_df["Label"] == 1).sum()) if "Label" in test_df.columns else 0
         print(
             f"Created train.csv and test.csv in {self.processed_path} "
-            f"(train benign={len(train_df)}, test benign={len(benign_test_df)}, test ransomware={len(ransomware_final)})"
+            f"(train benign={len(train_df)}, test benign={test_benign}, test ransomware={test_ransomware})"
         )
 
     def preprocess_and_sanitize(self):

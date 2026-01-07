@@ -419,6 +419,10 @@ def main():
                         help='Diretório específico do experimento FedProx')
     parser.add_argument('--fedavg', type=str, default=None,
                         help='Diretório específico do experimento FedAvg')
+    parser.add_argument('--fedprox_label', type=str, default=None,
+                        help='Label customizada para o experimento passado em --fedprox')
+    parser.add_argument('--fedavg_label', type=str, default=None,
+                        help='Label customizada para o experimento passado em --fedavg')
     parser.add_argument('--output_dir', type=str, default='img/',
                         help='Diretório para salvar gráficos')
     parser.add_argument('--k', type=int, default=1,
@@ -428,7 +432,7 @@ def main():
 
     # Pequena higiene para evitar erro ao colar comandos com vírgula no final.
     # Ex.: "--output_dir img/test/,".
-    for attr in ("results_dir", "fedprox", "fedavg", "output_dir"):
+    for attr in ("results_dir", "fedprox", "fedavg", "fedprox_label", "fedavg_label", "output_dir"):
         val = getattr(args, attr, None)
         if isinstance(val, str):
             setattr(args, attr, val.rstrip(","))
@@ -442,17 +446,25 @@ def main():
 
     if args.fedprox and args.fedavg:
         # Usa experimentos especificados
-        for path, default_label in [(args.fedavg, 'FedAvg'), (args.fedprox, 'FedProx')]:
+        for path, default_label, override_label in [
+            (args.fedavg, 'FedAvg', args.fedavg_label),
+            (args.fedprox, 'FedProx', args.fedprox_label),
+        ]:
             if os.path.exists(path):
                 print(f"\nLoading: {path}")
                 data = load_experiment_data(path)
                 if 'f1_scores' in data:
                     experiments.append(data)
-                    # Tenta pegar label do CSV
-                    if 'aggregation_method' in data['f1_scores'].columns:
-                        label = data['f1_scores']['aggregation_method'].iloc[0]
+                    if override_label:
+                        label = override_label
                     else:
-                        label = default_label
+                        # Tenta pegar label do CSV; se duplicar, usa o basename do diretório.
+                        if 'aggregation_method' in data['f1_scores'].columns:
+                            label = data['f1_scores']['aggregation_method'].iloc[0]
+                        else:
+                            label = default_label
+                        if label in labels:
+                            label = os.path.basename(path)
                     labels.append(label)
     else:
         # Auto-detecta experimentos

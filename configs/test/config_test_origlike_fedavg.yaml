@@ -23,7 +23,7 @@ lora_alpha_multiplier: 4
 lora_dropout: 0.1
 
 # --- Federated Learning Settings ---
-use_parallel_training: true
+use_parallel_training: false
 num_rounds: 10
 num_clients: 50
 client_frac: 0.2
@@ -53,4 +53,3 @@ threshold_selection: "f1_max"
 
 evaluator_version: "new"
 accuracy_method: "original"
-

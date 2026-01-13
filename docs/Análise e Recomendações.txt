@@ -143,12 +143,13 @@ Resumo das Implementações
 
   ---
   Para Rodar os Experimentos
- python main.py --config configs/test/config_test_fedavg.yaml && \
-  python main.py --config configs/test/config_test_fedprox.yaml && \
-  python scripts/plot_results.py \
-      --fedavg results/TEST_FedAvg_Phase1 \
-      --fedprox results/TEST_FedProx_Phase1 \
-      --output_dir img/test/
+ python3 main.py --config configs/test/config_test_origlike_fedavg.yaml && \
+  python3 main.py --config configs/test/config_test_origlike_fedavg_lora16.yaml && \
+  python3 scripts/plot_results.py \
+      --fedavg results/TEST_OrigLike_FedAvg_R10 --fedavg_label LoRA32 \
+      --fedprox results/TEST_OrigLike_FedAvg_R10_LoRA16 --fedprox_label LoRA16 \
+      --k 10 \
+      --output_dir img/test_lora32_vs_lora16/
 
 
 
@@ -203,5 +204,4 @@ Resumo das Implementações
         moderar o claim).
   4. Threats to validity / Limitations
       - Explicitar: ataque vindo de um único host/par (Src/Dst), possível efeito de “host/domain shift”, mesmo sem IP no Content.
-
 

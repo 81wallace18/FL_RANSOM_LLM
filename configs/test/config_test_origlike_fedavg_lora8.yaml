@@ -1,10 +1,10 @@
-# configs/test/config_test_origlike_fedprox.yaml
-# Test config (original scoring) closer to the best-performing setup.
+# configs/test/config_test_origlike_fedavg_lora8.yaml
+# Same as config_test_origlike_fedavg.yaml, but with LoRA rank=8 for comparison.
 
 # --- General Experiment Settings ---
-simulation_name: "TEST_OrigLike_FedProx_R10"
+simulation_name: "TEST_OrigLike_FedAvg_R10_LoRA8"
 dataset_name: "edge_ransomware"
-description: "Orig-like test: FedProx (mu=0.01) with LR=3e-4, frac=0.2, LoRA r=32 (10 rounds)"
+description: "Orig-like test: FedAvg (mu=0) with LR=3e-4, frac=0.2, LoRA r=8 (10 rounds)"
 
 # --- Paths ---
 data_base_path: "./data/ids_ransomware/"
@@ -18,12 +18,12 @@ benign_train_fraction: 0.8
 # --- Model Settings ---
 model_name: "HuggingFaceTB/SmolLM-135M"
 lora: True
-lora_rank: 32
+lora_rank: 8
 lora_alpha_multiplier: 4
 lora_dropout: 0.1
 
 # --- Federated Learning Settings ---
-use_parallel_training: true
+use_parallel_training: false
 num_rounds: 10
 num_clients: 50
 client_frac: 0.2
@@ -34,7 +34,7 @@ non_iid_alpha: 0.5
 client_selection_strategy: "data_size_proportional"
 use_weighted_aggregation: true
 
-fedprox_mu: 0.01
+fedprox_mu: 0.0
 
 # --- Client Training Settings ---
 max_steps: 50
@@ -53,4 +53,3 @@ threshold_selection: "f1_max"
 
 evaluator_version: "new"
 accuracy_method: "original"
-

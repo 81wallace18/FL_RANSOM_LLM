@@ -17,26 +17,26 @@ Esta tabela compila os **valores numéricos explicitamente citados** nos arquivo
 
 Extraído de `docs/artigos_referencia/Transfer Learning in Pre-Trained Large Language.md` (tabela “Model / Context Size / Accuracy / Precision / Recall / F1-Score / Kappa / MCC”):
 
-| Model | Context Size | Accuracy | Precision | Recall | F1-Score | Kappa | MCC |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| BERT | 512 | 0.6772 | 0.82 | 0.6596 | 0.6465 | 0.5504 | 0.6024 |
-| DistilBERT | 512 | 0.6289 | 0.71 | 0.6181 | 0.5930 | 0.4786 | 0.5379 |
-| GPT-2 | 1024 | 0.6944 | 0.7986 | 0.6865 | 0.6808 | 0.5792 | 0.6123 |
-| BigBird | 4096 | 0.8667 | 0.8754 | 0.8668 | 0.8688 | 0.8298 | 0.8311 |
-| Longformer | 4096 | 0.8616 | 0.8696 | 0.8614 | 0.8621 | 0.8232 | 0.8250 |
-| Mistral | 8192 | 0.5817 | 0.6112 | 0.6462 | 0.6242 | 0.4754 | 0.4798 |
+| Model     | Context Size | Accuracy | Precision | Recall | F1-Score | Kappa | MCC |
+|-----------|-------------:|---------:|----------:|-------:|---------:|------:|----:|
+| BERT      | 512          | 0.6772   | 0.82      | 0.6596 | 0.6465 | 0.5504 | 0.6024 |
+| DistilBERT| 512          | 0.6289   | 0.71      | 0.6181 | 0.5930 | 0.4786 | 0.5379 |
+| GPT-2     | 1024         | 0.6944   | 0.7986    | 0.6865 | 0.6808 | 0.5792 | 0.6123 |
+| BigBird   | 4096         | 0.8667   | 0.8754    | 0.8668 | 0.8688 | 0.8298 | 0.8311 |
+| Longformer| 4096         | 0.8616   | 0.8696    | 0.8614 | 0.8621 | 0.8232 | 0.8250 |
+| Mistral   | 8192         | 0.5817   | 0.6112    | 0.6462 | 0.6242 | 0.4754 | 0.4798 |
 
 ## 3) IDS com BERT+BBPE — acurácia por classe (tabela do artigo)
 
 Extraído de `docs/artigos_referencia/Anomaly Based Intrusion Detection using Large.md` (TABLE III: “Sgl” = tokenizer treinado no dataset; “Cmb” = tokenizer treinado na combinação dos datasets):
 
-| Class | ToN-IoT (Sgl) | ToN-IoT (Cmb) | UNSW-NB15 (Sgl) | UNSW-NB15 (Cmb) | Edge-IIoT (Sgl) | Edge-IIoT (Cmb) |
-|---|---:|---:|---:|---:|---:|---:|
-| Normal | 0.99 | 1.00 | 0.96 | 0.98 | 0.99 | 1.00 |
+| Class    | ToN-IoT (Sgl) | ToN-IoT (Cmb) | UNSW-NB15 (Sgl) | UNSW-NB15 (Cmb) | Edge-IIoT (Sgl) | Edge-IIoT (Cmb) |
+|----------|--------------:|--------------:|----------------:|-----------------:|---------------:|----------------:|
+| Normal   | 0.99 | 1.00 | 0.96 | 0.98 | 0.99 | 1.00 |
 | Backdoor | 0.99 | 1.00 | 0.00 | 0.17 | 0.97 | 1.00 |
-| DDoS | 0.92 | 0.99 | - | - | 1.00 | 1.00 |
-| DoS | 0.95 | 0.99 | 0.02 | 0.28 | - | - |
-| MITM | 0.97 | 0.99 | - | - | 0.99 | 1.00 |
+| DDoS     | 0.92 | 0.99 | - | - | 1.00 | 1.00 |
+| DoS      | 0.95 | 0.99 | 0.02 | 0.28 | - | - |
+| MITM     | 0.97 | 0.99 | - | - | 0.99 | 1.00 |
 | Ransomware | 0.99 | 1.00 | - | - | 0.92 | 1.00 |
 | Injection | 0.98 | 0.99 | - | - | 0.98 | 1.00 |
 | Scanning | 0.99 | 0.99 | - | - | 0.98 | 1.00 |
@@ -50,4 +50,3 @@ Extraído de `docs/artigos_referencia/Anomaly Based Intrusion Detection using La
 | Port Scanning | - | - | - | - | 0.96 | 1.00 |
 | SQL Injection | - | - | - | - | 0.99 | 1.00 |
 | Vulnerability Scanner | - | - | - | - | 0.99 | 1.00 |
-

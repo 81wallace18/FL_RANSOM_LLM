@@ -28,7 +28,7 @@ plt.rcParams.update({
     'legend.fontsize': 10,
     'xtick.labelsize': 10,
     'ytick.labelsize': 10,
-    'figure.figsize': (8, 5),
+    'figure.figsize': (10, 6),
     'figure.dpi': 150,
     'savefig.dpi': 300,
     'savefig.bbox': 'tight',
@@ -87,7 +87,7 @@ def plot_f1_convergence(dfs: list, labels: list, output_path: str, k: int = 1):
         output_path: Caminho para salvar o gráfico
         k: Valor de k para top-k accuracy
     """
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig, ax = plt.subplots(figsize=(10, 6))
 
     for df, label in zip(dfs, labels):
         subset = df[df['k'] == k].copy()
@@ -101,16 +101,32 @@ def plot_f1_convergence(dfs: list, labels: list, output_path: str, k: int = 1):
             subset['round'],
             subset['f1_score'],
             marker='o',
-            markersize=4,
-            linewidth=2,
+            markersize=4.5,
+            linewidth=2.5,
             label=label,
             color=color,
         )
 
+        # Annotate last + best points for readability
+        try:
+            last = subset.iloc[-1]
+            best = subset.loc[subset['f1_score'].idxmax()]
+            ax.scatter([best['round']], [best['f1_score']], marker='*', s=140, color=color, zorder=5)
+            ax.annotate(
+                f"{last['f1_score']:.3f}",
+                (last['round'], last['f1_score']),
+                textcoords="offset points",
+                xytext=(6, 6),
+                fontsize=9,
+                color=color or '#333333',
+            )
+        except Exception:
+            pass
+
     ax.set_xlabel('Rodada de Treinamento')
     ax.set_ylabel('F1-Score')
     ax.set_title(f'Convergência do F1-Score (Top-{k})')
-    ax.legend(loc='lower right')
+    ax.legend(loc='lower right', frameon=True, framealpha=0.95)
     ax.set_ylim(0, 1.05)
     ax.grid(True, alpha=0.3)
 
@@ -122,8 +138,9 @@ def plot_f1_convergence(dfs: list, labels: list, output_path: str, k: int = 1):
 def plot_metrics_comparison(dfs: list, labels: list, output_path: str, k: int = 1):
     """
     Plota comparação de métricas (F1, Precision, Recall) no último round.
+    Para muitos experimentos, prefira os gráficos `final_f1_ranking.png` e `final_fpr_ranking.png`.
     """
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig, ax = plt.subplots(figsize=(10, 6))
 
     metrics = ['f1_score', 'precision', 'recall']
     metric_labels = ['F1-Score', 'Precision', 'Recall']
@@ -161,12 +178,117 @@ def plot_metrics_comparison(dfs: list, labels: list, output_path: str, k: int = 
     ax.set_title(f'Comparação de Métricas - Round Final (Top-{k})')
     ax.set_xticks(x)
     ax.set_xticklabels(metric_labels)
-    ax.legend(loc='upper right')
+    ax.legend(loc='upper right', frameon=True, framealpha=0.95)
     ax.set_ylim(0, 1.15)
     ax.grid(True, alpha=0.3, axis='y')
 
     plt.savefig(output_path)
     plt.close()
+    print(f"Saved: {output_path}")
+
+def _extract_last_row(df: pd.DataFrame, k: int) -> pd.Series | None:
+    subset = df[df['k'] == k].copy()
+    if subset.empty:
+        return None
+    last_round = subset['round'].max()
+    return subset[subset['round'] == last_round].iloc[0]
+
+
+def plot_final_ranking(
+    dfs: list,
+    labels: list,
+    output_path: str,
+    *,
+    k: int = 10,
+    metric: str = "f1_score",
+    title: str | None = None,
+    ylabel: str | None = None,
+    logy: bool = False,
+):
+    """
+    Bar chart with experiments ranked by the chosen metric on the last round.
+    Useful when comparing many experiments (e.g., sweeps).
+    """
+    rows = []
+    for df, label in zip(dfs, labels):
+        last = _extract_last_row(df, k)
+        if last is None or metric not in last:
+            continue
+        rows.append((label, float(last[metric]), float(last.get("precision", np.nan)), float(last.get("recall", np.nan)), float(last.get("benign_fpr", np.nan))))
+
+    if not rows:
+        print(f"Sem dados para ranking ({metric})")
+        return
+
+    rows.sort(key=lambda x: x[1], reverse=True)
+    labels_sorted = [r[0] for r in rows]
+    values = [r[1] for r in rows]
+    colors = [COLORS.get(l, '#333333') for l in labels_sorted]
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    bars = ax.bar(labels_sorted, values, color=colors)
+    ax.set_title(title or f"Ranking (Round Final) — Top-{k} {metric}")
+    ax.set_ylabel(ylabel or metric)
+    ax.grid(True, alpha=0.3, axis='y')
+    ax.tick_params(axis='x', rotation=25)
+
+    if logy:
+        ax.set_yscale("log")
+
+    # annotate bars
+    for bar, val in zip(bars, values):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() * (1.02 if not logy else 1.2),
+            f"{val:.3f}" if metric != "benign_fpr" else f"{val:.4f}",
+            ha='center',
+            va='bottom',
+            fontsize=9,
+        )
+
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
+    print(f"Saved: {output_path}")
+
+
+def save_summary_csv(dfs: list, labels: list, output_path: str, k: int = 10):
+    """Saves a compact CSV summary (last + best) for quick inspection and paper tables."""
+    rows = []
+    for df, label in zip(dfs, labels):
+        subset = df[df['k'] == k].copy()
+        if subset.empty:
+            continue
+        subset = subset.sort_values("round")
+        last = subset.iloc[-1]
+        # idxmax returns an index label (not positional), so use `.loc` (or reset_index).
+        # Also guard against all-NaN columns.
+        f1_series = pd.to_numeric(subset["f1_score"], errors="coerce")
+        if f1_series.isna().all():
+            continue
+        best = subset.loc[f1_series.idxmax()]
+        rows.append({
+            "label": label,
+            "k": k,
+            "last_round": int(last["round"]),
+            "last_f1": float(last["f1_score"]),
+            "last_precision": float(last.get("precision", np.nan)),
+            "last_recall": float(last.get("recall", np.nan)),
+            "last_benign_fpr": float(last.get("benign_fpr", np.nan)),
+            "last_threshold": float(last.get("threshold", np.nan)),
+            "best_round": int(best["round"]),
+            "best_f1": float(best["f1_score"]),
+            "best_precision": float(best.get("precision", np.nan)),
+            "best_recall": float(best.get("recall", np.nan)),
+            "best_benign_fpr": float(best.get("benign_fpr", np.nan)),
+        })
+
+    if not rows:
+        print("Sem dados para summary.csv")
+        return
+
+    out_df = pd.DataFrame(rows).sort_values(["last_f1"], ascending=False)
+    out_df.to_csv(output_path, index=False)
     print(f"Saved: {output_path}")
 
 
@@ -427,6 +549,8 @@ def main():
                         help='Diretório para salvar gráficos')
     parser.add_argument('--k', type=int, default=1,
                         help='Valor de K para análises Top-K')
+    parser.add_argument('--title', type=str, default=None,
+                        help='Título opcional para os gráficos principais')
 
     args = parser.parse_args()
 
@@ -484,6 +608,10 @@ def main():
                         label = f"FedProx_{mu}"
                 else:
                     label = os.path.basename(exp_dir)
+                # Se vários experimentos tiverem o mesmo método (ex.: todos "FedAvg"),
+                # desambigua pelo nome da pasta para evitar legenda duplicada.
+                if label in labels:
+                    label = os.path.basename(exp_dir)
                 labels.append(label)
 
     if not experiments:
@@ -514,6 +642,31 @@ def main():
         f1_dfs, labels,
         os.path.join(args.output_dir, 'metrics_comparison.png'),
         k=args.k
+    )
+
+    # Rankings (melhor para muitos experimentos)
+    plot_final_ranking(
+        f1_dfs, labels,
+        os.path.join(args.output_dir, 'final_f1_ranking.png'),
+        k=args.k,
+        metric="f1_score",
+        title=args.title or f"Ranking de F1 (Round Final) — Top-{args.k}",
+        ylabel="F1 (round final)",
+    )
+    plot_final_ranking(
+        f1_dfs, labels,
+        os.path.join(args.output_dir, 'final_fpr_ranking.png'),
+        k=args.k,
+        metric="benign_fpr",
+        title=args.title or f"Ranking de FPR Benigno (Round Final) — Top-{args.k}",
+        ylabel="Benign FPR (round final)",
+        logy=True,
+    )
+
+    save_summary_csv(
+        f1_dfs, labels,
+        os.path.join(args.output_dir, 'summary.csv'),
+        k=args.k,
     )
 
     # 3. Velocidade de convergência

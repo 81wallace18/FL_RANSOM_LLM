@@ -22,8 +22,8 @@ lora_rank: 16
 lora_alpha_multiplier: 4
 lora_dropout: 0.1
 
-# Servidor com 2 GPUs: modo paralelo (se algum cliente falhar, compare `num_selected_clients` no communication_metrics.csv)
-use_parallel_training: true
+# Modo sequencial (mais estável/reprodutível; evita falhas de cliente no multiprocessamento)
+use_parallel_training: false
 num_rounds: 30
 num_clients: 50
 client_frac: 0.3
@@ -53,4 +53,3 @@ enable_temporal_metrics: false
 threshold_selection: "f1_max"
 evaluator_version: "new"
 accuracy_method: "original"
-

@@ -63,6 +63,7 @@ accuracy_method: "original"
 evaluation_runs:
   - name: "operational_fpr_target_flow"
     overrides:
+      evaluation_output_dir: "./results/FINAL_PAPER_LoRA16_FedProx_0005_Orig_R30/eval_fpr_target_flow"
       threshold_selection: "fpr_target"
       fpr_target: 0.01
       calibration_source: "train_benign"
@@ -71,6 +72,7 @@ evaluation_runs:
       temporal_eval_mode: "flow"
   - name: "operational_fpr_target_window_30s"
     overrides:
+      evaluation_output_dir: "./results/FINAL_PAPER_LoRA16_FedProx_0005_Orig_R30/eval_fpr_target_window30s"
       threshold_selection: "fpr_target"
       fpr_target: 0.01
       calibration_source: "train_benign"
@@ -79,4 +81,3 @@ evaluation_runs:
       temporal_eval_mode: "window"
       temporal_window_seconds: 30
       temporal_window_agg: "mean"
-

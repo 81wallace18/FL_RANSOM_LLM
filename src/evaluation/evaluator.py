@@ -18,7 +18,18 @@ class Evaluator:
         self.config = config
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.results_dir = os.path.join(config['results_path'], config['simulation_name'])
+        self.output_dir = self.config.get("evaluation_output_dir", self.results_dir)
+        os.makedirs(self.output_dir, exist_ok=True)
         self.test_df = self._load_test_data()
+
+    def _output_csv_path(self, basename: str) -> str:
+        """
+        Returns an output path for a CSV basename, suffixing by threshold mode
+        when not using the oracle `f1_max` selection.
+        """
+        threshold_mode = str(self.config.get("threshold_selection", "f1_max")).lower()
+        suffix = "" if threshold_mode == "f1_max" else f"_{threshold_mode}"
+        return os.path.join(self.output_dir, f"{basename}{suffix}.csv")
 
     def _load_test_data(self):
         """Loads and prepares the test dataset."""
@@ -542,19 +553,19 @@ class Evaluator:
 
         # Save final results
         f1_df = pd.DataFrame(all_f1_results)
-        f1_results_path = os.path.join(self.results_dir, 'f1_scores.csv')
+        f1_results_path = self._output_csv_path('f1_scores')
         f1_df.to_csv(f1_results_path, index=False)
         print(f"\nEvaluation complete. F1 score results saved to {f1_results_path}")
 
         # Salva métricas temporais, se tiverem sido calculadas
         if all_temporal_results:
             temporal_df = pd.DataFrame(all_temporal_results)
-            temporal_results_path = os.path.join(self.results_dir, 'temporal_metrics.csv')
+            temporal_results_path = self._output_csv_path('temporal_metrics')
             temporal_df.to_csv(temporal_results_path, index=False)
             print(f"Temporal evaluation complete. Results saved to {temporal_results_path}")
 
         if all_bench_results:
             bench_df = pd.DataFrame(all_bench_results)
-            bench_path = os.path.join(self.results_dir, 'inference_benchmark.csv')
+            bench_path = self._output_csv_path('inference_benchmark')
             bench_df.to_csv(bench_path, index=False)
             print(f"Inference benchmark complete. Results saved to {bench_path}")

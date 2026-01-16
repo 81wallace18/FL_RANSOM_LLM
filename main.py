@@ -1,12 +1,23 @@
 import yaml
 import argparse
 import os
+import copy
 from src.data_processing.ransomlog_processor import RansomLogProcessor
 from src.data_processing.hdfs_processor import HDFSProcessor
 from src.data_processing.edge_ransomware_processor import EdgeRansomwareProcessor
 from src.federated_learning.server import FederatedServer
 from src.evaluation.evaluator_antigo import Evaluator as OldEvaluator
 from src.evaluation.evaluator import Evaluator as NewEvaluator
+
+def _merge_overrides(base: dict, overrides: dict) -> dict:
+    """
+    Shallow-merge overrides into a copy of base config.
+    Intended for evaluation-only overrides (thresholding, temporal settings, etc.).
+    """
+    merged = copy.deepcopy(base)
+    for k, v in (overrides or {}).items():
+        merged[k] = v
+    return merged
 
 def main(config_path):
     """
@@ -57,6 +68,19 @@ def main(config_path):
         new_evaluator = NewEvaluator(config)
         new_evaluator.evaluate()
         print("--- Evaluation (Novo) Complete ---")
+
+    # 5. Optional additional evaluation runs (e.g., operational fpr_target + temporal metrics)
+    evaluation_runs = config.get("evaluation_runs", [])
+    if evaluation_runs:
+        print("\n--- Starting Additional Evaluations (Overrides) ---")
+        for i, run_cfg in enumerate(evaluation_runs, start=1):
+            name = run_cfg.get("name", f"eval_{i}")
+            overrides = run_cfg.get("overrides", {})
+            eval_config = _merge_overrides(config, overrides)
+            print(f"\n--- Evaluation Override {i}/{len(evaluation_runs)}: {name} ---")
+            evaluator = NewEvaluator(eval_config)
+            evaluator.evaluate()
+        print("--- Additional Evaluations Complete ---")
 
 import multiprocessing as mp
 

@@ -39,7 +39,7 @@ def main(config_path):
     print("\n--- Initializing Data Processing ---")
     if config['dataset_name'] == 'ransomlog':
         processor = RansomLogProcessor(config)
-    elif config['dataset_name'] == 'edge_ransomware':
+    elif config['dataset_name'] in ('edge_ransomware', 'edge_ransomware_new'):
         processor = EdgeRansomwareProcessor(config)
     elif config['dataset_name'] == 'hdfs':
         processor = HDFSProcessor(config)

@@ -66,16 +66,27 @@ class Evaluator:
 
         calibration_source:
           - "train_benign": uses processed/train.csv filtered to Label==0
+          - "calibration_benign": uses processed/calibration.csv filtered to Label==0 (recommended)
           - "test_benign":  uses processed/test.csv filtered to Label==0 (not recommended for strict evaluation)
         """
         source = self.config.get('calibration_source', 'train_benign')
-        split = "train" if source == "train_benign" else "test"
+        if source == "train_benign":
+            split = "train"
+        elif source == "calibration_benign":
+            split = "calibration"
+        else:
+            split = "test"
         path = os.path.join(
             self.config['data_base_path'],
             self.config['dataset_name'],
             'processed',
             f'{split}.csv'
         )
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                f"Calibration source '{source}' requires {path}, but it does not exist. "
+                "Re-run preprocessing with `benign_calibration_fraction > 0`."
+            )
         df = pd.read_csv(path)
         if 'Label' in df.columns:
             df = df[df['Label'] == 0].copy()

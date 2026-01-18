@@ -80,7 +80,49 @@ class EdgeRansomwareProcessor(BaseProcessor):
         print(f"Loading ransomware flows from: {ransomware_path}")
         ransomware_df = pd.read_csv(ransomware_path)
 
+        benign_df = self._apply_ip_filters(benign_df, label="benign")
+        ransomware_df = self._apply_ip_filters(ransomware_df, label="ransomware")
+
         return benign_df, ransomware_df
+
+    def _apply_ip_filters(self, df: pd.DataFrame, *, label: str) -> pd.DataFrame:
+        """
+        Optional IP filtering for stronger experimental rigor in device-based evaluation.
+
+        Supported config keys:
+          - filter_ipv4_only: bool (default False)
+          - drop_zero_ips: bool (default False)
+        """
+        if df is None or df.empty:
+            return df
+
+        if "Src IP" not in df.columns:
+            return df
+
+        filter_ipv4_only = bool(self.config.get("filter_ipv4_only", False))
+        drop_zero_ips = bool(self.config.get("drop_zero_ips", False))
+
+        if not (filter_ipv4_only or drop_zero_ips):
+            return df
+
+        before = len(df)
+        src = df["Src IP"].astype(str)
+
+        mask = pd.Series(True, index=df.index)
+
+        if drop_zero_ips:
+            bad = {"0", "0.0.0.0", "::", ""}
+            mask &= ~src.isin(bad)
+
+        if filter_ipv4_only:
+            ipv4_rx = re.compile(r"^(?:\\d{1,3}\\.){3}\\d{1,3}$")
+            mask &= src.apply(lambda x: bool(ipv4_rx.match(x)))
+
+        out = df.loc[mask].copy()
+        after = len(out)
+        if before != after:
+            print(f"IP filter ({label}): {before} -> {after} rows (filter_ipv4_only={filter_ipv4_only}, drop_zero_ips={drop_zero_ips})")
+        return out
 
     def _build_text_from_row_raw(self, row):
         """
@@ -154,6 +196,8 @@ class EdgeRansomwareProcessor(BaseProcessor):
 
         benign_train_frac = float(self.config.get("benign_train_fraction", 0.8))
         benign_train_frac = min(max(benign_train_frac, 0.0), 1.0)
+        benign_calib_frac = float(self.config.get("benign_calibration_fraction", 0.0))
+        benign_calib_frac = min(max(benign_calib_frac, 0.0), 1.0)
 
         cols_base = ["Flow ID", "Src IP", "Dst IP", "Timestamp", "Attack Name", "Label"]
 
@@ -168,8 +212,13 @@ class EdgeRansomwareProcessor(BaseProcessor):
             # - Teste: holdout benigno + TODO ransomware (evita "quebrar" o ataque no split)
             benign_shuffled = benign_df.sample(frac=1.0, random_state=42).reset_index(drop=True)
             train_len = int(benign_train_frac * len(benign_shuffled))
+            calib_len = int(benign_calib_frac * len(benign_shuffled))
+            if train_len + calib_len > len(benign_shuffled):
+                calib_len = max(0, len(benign_shuffled) - train_len)
+
             benign_train = benign_shuffled.iloc[:train_len].copy()
-            benign_holdout = benign_shuffled.iloc[train_len:].copy()
+            benign_calib = benign_shuffled.iloc[train_len:train_len + calib_len].copy()
+            benign_holdout = benign_shuffled.iloc[train_len + calib_len:].copy()
 
             # Compute bin edges from benign training split ONLY (avoid leakage).
             num_bins = int(self.config.get("binning_num_bins", 32))
@@ -207,6 +256,10 @@ class EdgeRansomwareProcessor(BaseProcessor):
                 lambda r: self._build_text_from_row_binned(r, edges_by_key=edges_by_key, transform_by_key=transform_by_key),
                 axis=1,
             )
+            benign_calib["Content"] = benign_calib.apply(
+                lambda r: self._build_text_from_row_binned(r, edges_by_key=edges_by_key, transform_by_key=transform_by_key),
+                axis=1,
+            )
             benign_holdout["Content"] = benign_holdout.apply(
                 lambda r: self._build_text_from_row_binned(r, edges_by_key=edges_by_key, transform_by_key=transform_by_key),
                 axis=1,
@@ -218,6 +271,7 @@ class EdgeRansomwareProcessor(BaseProcessor):
             )
 
             train_df = benign_train[cols_base + ["Content"]].reset_index(drop=True)
+            calib_df = benign_calib[cols_base + ["Content"]].reset_index(drop=True)
             test_df = pd.concat(
                 [benign_holdout[cols_base + ["Content"]], ransomware_part[cols_base + ["Content"]]],
                 ignore_index=True,
@@ -231,8 +285,13 @@ class EdgeRansomwareProcessor(BaseProcessor):
 
             benign_final = benign_full[cols_base + ["Content"]].sample(frac=1.0, random_state=42).reset_index(drop=True)
             train_len = int(benign_train_frac * len(benign_final))
+            calib_len = int(benign_calib_frac * len(benign_final))
+            if train_len + calib_len > len(benign_final):
+                calib_len = max(0, len(benign_final) - train_len)
+
             train_df = benign_final[:train_len].reset_index(drop=True)
-            benign_test_df = benign_final[train_len:].reset_index(drop=True)
+            calib_df = benign_final[train_len:train_len + calib_len].reset_index(drop=True)
+            benign_test_df = benign_final[train_len + calib_len:].reset_index(drop=True)
 
             ransomware_final = ransomware_full[cols_base + ["Content"]].copy()
             test_df = pd.concat([benign_test_df, ransomware_final], ignore_index=True)
@@ -240,13 +299,16 @@ class EdgeRansomwareProcessor(BaseProcessor):
 
         os.makedirs(self.processed_path, exist_ok=True)
         train_df.to_csv(os.path.join(self.processed_path, "train.csv"), index=False)
+        if benign_calib_frac > 0.0:
+            calib_df.to_csv(os.path.join(self.processed_path, "calibration.csv"), index=False)
         test_df.to_csv(os.path.join(self.processed_path, "test.csv"), index=False)
 
+        calib_benign = int((calib_df["Label"] == 0).sum()) if benign_calib_frac > 0.0 and "Label" in calib_df.columns else 0
         test_benign = int((test_df["Label"] == 0).sum()) if "Label" in test_df.columns else 0
         test_ransomware = int((test_df["Label"] == 1).sum()) if "Label" in test_df.columns else 0
         print(
             f"Created train.csv and test.csv in {self.processed_path} "
-            f"(train benign={len(train_df)}, test benign={test_benign}, test ransomware={test_ransomware})"
+            f"(train benign={len(train_df)}, calib benign={calib_benign}, test benign={test_benign}, test ransomware={test_ransomware})"
         )
 
     def preprocess_and_sanitize(self):

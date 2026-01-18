@@ -75,15 +75,44 @@ class EdgeRansomwareProcessor(BaseProcessor):
             )
 
         print(f"Loading benign flows from: {benign_path}")
-        benign_df = pd.read_csv(benign_path)
+        benign_df = pd.read_csv(benign_path, skipinitialspace=True, low_memory=False)
 
         print(f"Loading ransomware flows from: {ransomware_path}")
-        ransomware_df = pd.read_csv(ransomware_path)
+        ransomware_df = pd.read_csv(ransomware_path, skipinitialspace=True, low_memory=False)
+
+        benign_df = self._normalize_ip_columns(benign_df)
+        ransomware_df = self._normalize_ip_columns(ransomware_df)
 
         benign_df = self._apply_ip_filters(benign_df, label="benign")
         ransomware_df = self._apply_ip_filters(ransomware_df, label="ransomware")
 
+        if len(benign_df) == 0:
+            raise ValueError(
+                "No benign rows available after loading + optional IP filters. "
+                "Your raw CSV may include leading spaces in IP columns or non-IPv4 values. "
+                "Try keeping `filter_ipv4_only=true` but ensure IPs are stripped, or temporarily set it to false."
+            )
+        if len(ransomware_df) == 0:
+            raise ValueError(
+                "No ransomware rows available after loading + optional IP filters. "
+                "Your raw CSV may include leading spaces in IP columns or non-IPv4 values. "
+                "Try keeping `filter_ipv4_only=true` but ensure IPs are stripped, or temporarily set it to false."
+            )
+
         return benign_df, ransomware_df
+
+    def _normalize_ip_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Normalizes IP-like columns (removes leading/trailing whitespace).
+        Some CSV exports include spaces after commas, e.g. ' 192.168.0.128'.
+        """
+        if df is None or df.empty:
+            return df
+
+        for col in ("Src IP", "Dst IP"):
+            if col in df.columns:
+                df[col] = df[col].astype("string").str.strip()
+        return df
 
     def _apply_ip_filters(self, df: pd.DataFrame, *, label: str) -> pd.DataFrame:
         """
@@ -106,17 +135,18 @@ class EdgeRansomwareProcessor(BaseProcessor):
             return df
 
         before = len(df)
-        src = df["Src IP"].astype(str)
+        src = df["Src IP"].astype("string").str.strip()
 
         mask = pd.Series(True, index=df.index)
+        mask &= src.notna()
 
         if drop_zero_ips:
             bad = {"0", "0.0.0.0", "::", ""}
-            mask &= ~src.isin(bad)
+            mask &= ~src.fillna("").isin(bad)
 
         if filter_ipv4_only:
-            ipv4_rx = re.compile(r"^(?:\\d{1,3}\\.){3}\\d{1,3}$")
-            mask &= src.apply(lambda x: bool(ipv4_rx.match(x)))
+            ipv4_rx = r"^(?:\d{1,3}\.){3}\d{1,3}$"
+            mask &= src.fillna("").str.match(ipv4_rx)
 
         out = df.loc[mask].copy()
         after = len(out)

@@ -228,6 +228,24 @@ class EdgeRansomwareProcessor(BaseProcessor):
         benign_train_frac = min(max(benign_train_frac, 0.0), 1.0)
         benign_calib_frac = float(self.config.get("benign_calibration_fraction", 0.0))
         benign_calib_frac = min(max(benign_calib_frac, 0.0), 1.0)
+        benign_train_cap = self.config.get("benign_train_cap", None)
+        benign_train_cap = int(benign_train_cap) if benign_train_cap is not None else None
+        balance_test = bool(self.config.get("test_balance", False))
+        balance_seed = int(self.config.get("test_balance_seed", 42))
+
+        def _balance_test(df, *, seed, label_col="Label"):
+            if not balance_test or label_col not in df.columns:
+                return df
+            benign_df = df[df[label_col] == 0]
+            ransom_df = df[df[label_col] == 1]
+            if ransom_df.empty or benign_df.empty:
+                return df
+            n = min(len(benign_df), len(ransom_df))
+            benign_sample = benign_df.sample(n=n, random_state=seed)
+            ransom_sample = ransom_df.sample(n=n, random_state=seed)
+            return pd.concat([benign_sample, ransom_sample], ignore_index=True).sample(
+                frac=1.0, random_state=seed
+            ).reset_index(drop=True)
 
         cols_base = ["Flow ID", "Src IP", "Dst IP", "Timestamp", "Attack Name", "Label"]
 
@@ -241,10 +259,15 @@ class EdgeRansomwareProcessor(BaseProcessor):
             # - Treino: apenas benigno (benign-only training)
             # - Teste: holdout benigno + TODO ransomware (evita "quebrar" o ataque no split)
             benign_shuffled = benign_df.sample(frac=1.0, random_state=42).reset_index(drop=True)
-            train_len = int(benign_train_frac * len(benign_shuffled))
-            calib_len = int(benign_calib_frac * len(benign_shuffled))
-            if train_len + calib_len > len(benign_shuffled):
-                calib_len = max(0, len(benign_shuffled) - train_len)
+            total_benign = len(benign_shuffled)
+            if benign_train_cap is not None:
+                train_len = min(int(benign_train_cap), total_benign)
+            else:
+                train_len = int(benign_train_frac * total_benign)
+            remaining = max(0, total_benign - train_len)
+            calib_len = int(benign_calib_frac * remaining)
+            if train_len + calib_len > total_benign:
+                calib_len = max(0, total_benign - train_len)
 
             benign_train = benign_shuffled.iloc[:train_len].copy()
             benign_calib = benign_shuffled.iloc[train_len:train_len + calib_len].copy()
@@ -306,6 +329,7 @@ class EdgeRansomwareProcessor(BaseProcessor):
                 [benign_holdout[cols_base + ["Content"]], ransomware_part[cols_base + ["Content"]]],
                 ignore_index=True,
             ).sample(frac=1.0, random_state=42).reset_index(drop=True)
+            test_df = _balance_test(test_df, seed=balance_seed)
         else:
             # Raw mode: build from the full raw frames first, then split.
             benign_full = benign_df.copy()
@@ -314,10 +338,15 @@ class EdgeRansomwareProcessor(BaseProcessor):
             ransomware_full["Content"] = ransomware_full.apply(self._build_text_from_row_raw, axis=1)
 
             benign_final = benign_full[cols_base + ["Content"]].sample(frac=1.0, random_state=42).reset_index(drop=True)
-            train_len = int(benign_train_frac * len(benign_final))
-            calib_len = int(benign_calib_frac * len(benign_final))
-            if train_len + calib_len > len(benign_final):
-                calib_len = max(0, len(benign_final) - train_len)
+            total_benign = len(benign_final)
+            if benign_train_cap is not None:
+                train_len = min(int(benign_train_cap), total_benign)
+            else:
+                train_len = int(benign_train_frac * total_benign)
+            remaining = max(0, total_benign - train_len)
+            calib_len = int(benign_calib_frac * remaining)
+            if train_len + calib_len > total_benign:
+                calib_len = max(0, total_benign - train_len)
 
             train_df = benign_final[:train_len].reset_index(drop=True)
             calib_df = benign_final[train_len:train_len + calib_len].reset_index(drop=True)
@@ -326,6 +355,7 @@ class EdgeRansomwareProcessor(BaseProcessor):
             ransomware_final = ransomware_full[cols_base + ["Content"]].copy()
             test_df = pd.concat([benign_test_df, ransomware_final], ignore_index=True)
             test_df = test_df.sample(frac=1.0, random_state=42).reset_index(drop=True)
+            test_df = _balance_test(test_df, seed=balance_seed)
 
         os.makedirs(self.processed_path, exist_ok=True)
         train_df.to_csv(os.path.join(self.processed_path, "train.csv"), index=False)

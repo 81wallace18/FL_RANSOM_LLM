@@ -16,8 +16,12 @@ session_window_spliter: " ;-; "
 force_reprocess_data: true
 
 benign_train_fraction: 0.8
+benign_train_cap: 50000
 benign_calibration_fraction: 0.1
 processed_required_files: ["train.csv", "calibration.csv", "test.csv"]
+# Keep test 1:1 (benign:ransomware) for fast/clear comparison plots.
+test_balance: true
+test_balance_seed: 42
 
 content_mode: "raw"
 filter_ipv4_only: true
@@ -63,7 +67,7 @@ evaluation_runs:
       threshold_selection: "fpr_target"
       fpr_target: 0.01
       calibration_source: "calibration_benign"
-      calibration_num_samples: 0
+      calibration_num_samples: 2000
       enable_temporal_metrics: true
       temporal_eval_mode: "flow"
   - name: "operational_fpr_target_window_30s"
@@ -72,9 +76,8 @@ evaluation_runs:
       threshold_selection: "fpr_target"
       fpr_target: 0.01
       calibration_source: "calibration_benign"
-      calibration_num_samples: 0
+      calibration_num_samples: 2000
       enable_temporal_metrics: true
       temporal_eval_mode: "window"
       temporal_window_seconds: 30
-      temporal_window_agg: "min"
-
+      temporal_window_agg: "mean"

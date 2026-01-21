@@ -39,13 +39,12 @@ f1_threshold_steps: 1000
 threshold_selection: "fpr_target"
 fpr_target: 0.01
 calibration_source: "calibration_benign"
-calibration_num_samples: 2000
+calibration_num_samples: 0
 
 enable_temporal_metrics: true
 temporal_eval_mode: "window"
 temporal_window_seconds: 30
-temporal_window_agg: "mean"
+temporal_window_agg: "min"
 
 evaluator_version: "new"
 accuracy_method: "original"
-

@@ -154,7 +154,7 @@ def plot_f1_grid(
     fig.suptitle(title, y=1.01, fontsize=14)
     handles, labels = axes[0, 0].get_legend_handles_labels()
     if handles:
-        fig.legend(handles, labels, loc="lower center", ncols=1, frameon=True, framealpha=0.95)
+        fig.legend(handles, labels, loc="lower center", ncols=2, frameon=True, framealpha=0.95)
     fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path)
@@ -191,7 +191,7 @@ def plot_k10_details(*, runs: dict[str, pd.DataFrame], out_path: Path, title: st
     fig.suptitle(title, y=1.01, fontsize=14)
     handles, labels = axes[0, 0].get_legend_handles_labels()
     if handles:
-        fig.legend(handles, labels, loc="lower center", ncols=1, frameon=True, framealpha=0.95)
+        fig.legend(handles, labels, loc="lower center", ncols=2, frameon=True, framealpha=0.95)
     fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path)
@@ -233,7 +233,12 @@ def plot_threshold_and_fpr(*, runs: dict[str, pd.DataFrame], out_path: Path, tit
             )
 
     ax1.set_xlabel("Round")
-    ax1.set_ylabel("Threshold (chosen by f1_max)")
+    mode = "f1_max"
+    for df in runs.values():
+        if "threshold_mode" in df.columns and not df["threshold_mode"].empty:
+            mode = str(df["threshold_mode"].iloc[0]).lower()
+            break
+    ax1.set_ylabel("Threshold (chosen by fpr_target)" if mode == "fpr_target" else "Threshold (chosen by f1_max)")
     ax2.set_ylabel("Benign FPR")
     ax1.set_title(title)
     ax1.grid(True, alpha=0.25)
@@ -244,6 +249,58 @@ def plot_threshold_and_fpr(*, runs: dict[str, pd.DataFrame], out_path: Path, tit
     if h1 or h2:
         ax1.legend(h1 + h2, l1 + l2, loc="upper right", frameon=True, framealpha=0.95)
 
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path)
+    plt.close(fig)
+
+
+def plot_temporal_k10(*, runs: dict[str, pd.DataFrame], out_path: Path, title: str) -> None:
+    colors = _color_map(list(runs.keys()))
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5), sharex=True)
+    ax_ttd, ax_cov = axes
+
+    for run_name, df in runs.items():
+        sub = df[(df["k"] == 10)].sort_values("round")
+        if sub.empty:
+            continue
+        x = sub["round"].to_numpy(dtype=int)
+        if "mean_ttd_seconds" in sub.columns:
+            ax_ttd.plot(
+                x,
+                sub["mean_ttd_seconds"].to_numpy(dtype=float),
+                marker="o",
+                markersize=4,
+                linewidth=2.2,
+                label=run_name,
+                color=colors[run_name],
+            )
+        if "detection_coverage" in sub.columns:
+            ax_cov.plot(
+                x,
+                sub["detection_coverage"].to_numpy(dtype=float),
+                marker="o",
+                markersize=4,
+                linewidth=2.2,
+                label=run_name,
+                color=colors[run_name],
+            )
+
+    ax_ttd.set_title("Mean TTD (k=10)")
+    ax_ttd.set_xlabel("Round")
+    ax_ttd.set_ylabel("Seconds")
+    ax_ttd.grid(True, alpha=0.25)
+
+    ax_cov.set_title("Detection coverage (k=10)")
+    ax_cov.set_xlabel("Round")
+    ax_cov.set_ylabel("Coverage")
+    ax_cov.set_ylim(-0.02, 1.02)
+    ax_cov.grid(True, alpha=0.25)
+
+    fig.suptitle(title, y=1.02, fontsize=14)
+    handles, labels = ax_cov.get_legend_handles_labels()
+    if handles:
+        fig.legend(handles, labels, loc="lower center", ncols=2, frameon=True, framealpha=0.95)
     fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path)
@@ -274,7 +331,7 @@ def plot_communication(*, comm_runs: dict[str, pd.DataFrame], out_path: Path, ti
     fig.suptitle(title, y=1.02, fontsize=14)
     handles, labels = ax.get_legend_handles_labels()
     if handles:
-        fig.legend(handles, labels, loc="lower center", ncols=1, frameon=True, framealpha=0.95)
+        fig.legend(handles, labels, loc="lower center", ncols=2, frameon=True, framealpha=0.95)
     fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path)
@@ -330,11 +387,22 @@ def main() -> int:
     parser.add_argument("--include", nargs="*", default=None, help="Optional list of run directory names to include.")
     parser.add_argument("--ks", nargs="*", type=int, default=[1, 3, 5, 10], help="Top-k values to plot.")
     parser.add_argument(
+        "--eval_subdir",
+        type=str,
+        default=None,
+        help="Optional subdir under each run (e.g. 'eval_fpr_target_flow') where f1/temporal CSVs live.",
+    )
+    parser.add_argument(
         "--threshold_mode",
         type=str,
         default="f1_max",
         choices=["f1_max", "fpr_target"],
         help="Which evaluated CSV to use (default: f1_max).",
+    )
+    parser.add_argument(
+        "--plot_temporal",
+        action="store_true",
+        help="Also plot temporal metrics if temporal_metrics*.csv is available.",
     )
     args = parser.parse_args()
 
@@ -346,14 +414,34 @@ def main() -> int:
 
     runs: dict[str, pd.DataFrame] = {}
     comm_runs: dict[str, pd.DataFrame] = {}
+    temporal_runs: dict[str, pd.DataFrame] = {}
     for run_path in run_paths:
         name = run_path.name
         suffix = "" if args.threshold_mode == "f1_max" else f"_{args.threshold_mode}"
         f1_path = run_path / f"f1_scores{suffix}.csv"
+        if args.eval_subdir:
+            f1_path = run_path / args.eval_subdir / f"f1_scores{suffix}.csv"
+        elif args.threshold_mode != "f1_max":
+            # Common layout: operational eval stored under its own folder.
+            fallback = run_path / "eval_fpr_target_flow" / f"f1_scores{suffix}.csv"
+            if fallback.exists():
+                f1_path = fallback
         if not f1_path.exists():
             # Keep going; useful when only a subset has operational evaluation.
             continue
         runs[name] = _read_f1(f1_path)
+
+        if args.plot_temporal:
+            temporal_path = f1_path.with_name(f"temporal_metrics{suffix}.csv")
+            if temporal_path.exists():
+                tdf = pd.read_csv(temporal_path)
+                if "granularity" in tdf.columns:
+                    tdf = tdf[tdf["granularity"].astype(str) == "flow"].copy()
+                tdf["round"] = tdf["round"].astype(int)
+                tdf["k"] = tdf["k"].astype(int)
+                tdf = tdf.sort_values(["k", "round"]).reset_index(drop=True)
+                temporal_runs[name] = tdf
+
         comm_path = run_path / "communication_metrics.csv"
         if comm_path.exists():
             comm_runs[name] = _read_comm(comm_path)
@@ -370,6 +458,12 @@ def main() -> int:
         out_path=out_dir / f"k10_threshold_fpr_{tag}.png",
         title=f"{title} — k=10 threshold vs benign FPR ({tag})",
     )
+    if args.plot_temporal and temporal_runs:
+        plot_temporal_k10(
+            runs=temporal_runs,
+            out_path=out_dir / f"temporal_k10_{tag}.png",
+            title=f"{title} — temporal metrics (k=10, {tag})",
+        )
     if comm_runs:
         plot_communication(comm_runs=comm_runs, out_path=out_dir / "communication.png", title=f"{title} — communication")
 

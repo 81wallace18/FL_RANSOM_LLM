@@ -1,42 +1,35 @@
 # Paper-final (train + all metrics for the article) — edge_ransomware_new
 #
-# Uses a stronger dataset variant that:
-#   - has multiple attacked Src IPs
-#   - has better temporal overlap between benign and ransomware periods
-#
-# This config:
+# This single config:
 #   1) runs preprocessing with a separate benign calibration split
-#   2) runs federated training (10 rounds)
+#   2) runs federated training (30 rounds)
 #   3) runs oracle evaluation (f1_max)
 #   4) runs operational evaluation (fpr_target) + temporal metrics (TTD/coverage), flow + windowed
 #
 # Run:
-#   ./.venv/bin/python main.py --config configs/final/config_paper_final_mu0010_r10_edge_ransomware_new.yaml
+#   ./.venv/bin/python main.py --config configs/final/config_paper_final_mu0005_r30_edge_ransomware_new.yaml
 
-simulation_name: "FINAL_PAPER_EDGE_NEW_LoRA16_FedProx_0010_Orig_R10"
+simulation_name: "FINAL_PAPER_EDGE_NEW_LoRA16_FedProx_0005_Orig_R30"
 dataset_name: "edge_ransomware_new"
-description: "Paper final (edge_ransomware_new): SmolLM-135M + LoRA16 + FedProx(mu=0.001), 10 rounds, oracle + operational eval."
+description: "Paper final (edge_ransomware_new): SmolLM-135M + LoRA16 + FedProx(mu=0.0005), 30 rounds; oracle + operational eval."
 
 data_base_path: "./data/ids_ransomware/"
 results_path: "./results/"
 
 session_window_spliter: " ;-; "
+
+# First run on a fresh server: keep true to rebuild processed splits.
 force_reprocess_data: true
 
-# Train benign-only, plus a separate benign-only calibration split for operational thresholding.
+# Benign-only training + benign-only calibration (for deployable thresholding).
 benign_train_fraction: 0.8
-# Optional speed cap for quick iterations (disable for paper-final runs).
-benign_train_cap: 50000
 benign_calibration_fraction: 0.1
 processed_required_files: ["train.csv", "calibration.csv", "test.csv"]
-# Keep the natural class imbalance in the test set (operationally realistic).
-test_balance: false
-test_balance_seed: 42
 
+# Text representation (origlike)
 content_mode: "raw"
 
-# Recommended for scientific rigor in device-based temporal metrics:
-# keep only real IPv4 devices (drops IPv6 link-local and 0.0.0.0 placeholders).
+# Stronger scientific rigor: keep only real IPv4 devices (drops IPv6 link-local and 0.0.0.0 placeholders).
 filter_ipv4_only: true
 drop_zero_ips: true
 
@@ -47,7 +40,7 @@ lora_alpha_multiplier: 4
 lora_dropout: 0.1
 
 use_parallel_training: false
-num_rounds: 10
+num_rounds: 30
 num_clients: 50
 client_frac: 0.2
 
@@ -57,7 +50,7 @@ non_iid_alpha: 0.5
 client_selection_strategy: "data_size_proportional"
 use_weighted_aggregation: true
 
-fedprox_mu: 0.001
+fedprox_mu: 0.0005
 
 max_steps: 50
 batch_size: 4
@@ -69,24 +62,26 @@ lr_scheduler_type: "cosine"
 top_k_values: [1, 3, 5, 10]
 f1_threshold_steps: 1000
 
-# Default evaluation (oracle)
+# Default evaluation (oracle): best-achievable separability (not deployable).
 threshold_selection: "f1_max"
+
 evaluator_version: "new"
 accuracy_method: "original"
 
 evaluation_runs:
   - name: "operational_fpr_target_flow"
     overrides:
-      evaluation_output_dir: "./results/FINAL_PAPER_EDGE_NEW_LoRA16_FedProx_0010_Orig_R10/eval_fpr_target_flow"
+      evaluation_output_dir: "./results/FINAL_PAPER_EDGE_NEW_LoRA16_FedProx_0005_Orig_R30/eval_fpr_target_flow"
       threshold_selection: "fpr_target"
       fpr_target: 0.01
       calibration_source: "calibration_benign"
+      # Use full calibration split for a more stable achieved FPR.
       calibration_num_samples: 0
       enable_temporal_metrics: true
       temporal_eval_mode: "flow"
   - name: "operational_fpr_target_window_30s"
     overrides:
-      evaluation_output_dir: "./results/FINAL_PAPER_EDGE_NEW_LoRA16_FedProx_0010_Orig_R10/eval_fpr_target_window30s"
+      evaluation_output_dir: "./results/FINAL_PAPER_EDGE_NEW_LoRA16_FedProx_0005_Orig_R30/eval_fpr_target_window30s"
       threshold_selection: "fpr_target"
       fpr_target: 0.01
       calibration_source: "calibration_benign"
@@ -94,4 +89,6 @@ evaluation_runs:
       enable_temporal_metrics: true
       temporal_eval_mode: "window"
       temporal_window_seconds: 30
+      # For early detection, a conservative aggregator tends to react faster than mean.
       temporal_window_agg: "min"
+

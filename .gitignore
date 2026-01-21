@@ -1,8 +1,10 @@
 venv/
+.venv/
 __pycache__/
 results/
 
 # Data directories (processed and raw)
+data/
 data/hdfs/processed/*
 data/hdfs/raw/*
 data/ransomlog/processed/*

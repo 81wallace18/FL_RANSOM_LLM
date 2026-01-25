@@ -8,6 +8,7 @@ from src.data_processing.edge_ransomware_processor import EdgeRansomwareProcesso
 from src.federated_learning.server import FederatedServer
 from src.evaluation.evaluator_antigo import Evaluator as OldEvaluator
 from src.evaluation.evaluator import Evaluator as NewEvaluator
+from src.utils.hf import apply_hf_environment
 
 def _merge_overrides(base: dict, overrides: dict) -> dict:
     """
@@ -33,6 +34,9 @@ def main(config_path):
         
     print("Configuration loaded successfully.")
     print(f"Starting simulation: {config.get('simulation_name', 'N/A')}")
+
+    # Configure Hugging Face cache/offline behavior before any tokenizer/model loads.
+    apply_hf_environment(config)
 
     # 2. Execute Data Processing Pipeline
     # This factory pattern dynamically selects the correct processor based on the config.

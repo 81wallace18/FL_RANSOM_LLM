@@ -15,6 +15,10 @@ results_path: "./results/"
 session_window_spliter: " ;-; "
 force_reprocess_data: true
 
+# Force Hugging Face to use local cache only (no internet downloads).
+hf_offline: true
+hf_local_files_only: true
+
 benign_train_fraction: 0.8
 benign_train_cap: 50000
 benign_calibration_fraction: 0.1
@@ -83,4 +87,3 @@ evaluation_runs:
       temporal_eval_mode: "window"
       temporal_window_seconds: 30
       temporal_window_agg: "mean"
-

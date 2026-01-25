@@ -7,6 +7,7 @@ from datasets import Dataset, DatasetDict
 from transformers import AutoTokenizer
 
 from .base_processor import BaseProcessor
+from src.utils.hf import hf_from_pretrained_kwargs
 
 class HDFSProcessor(BaseProcessor):
     """
@@ -122,7 +123,7 @@ class HDFSProcessor(BaseProcessor):
 
         dataset = Dataset.from_pandas(df_normal[['Content']].rename(columns={'Content': 'text'}))
         
-        tokenizer = AutoTokenizer.from_pretrained(self.config['model_name'])
+        tokenizer = AutoTokenizer.from_pretrained(self.config['model_name'], **hf_from_pretrained_kwargs(self.config))
         tokenizer.pad_token = tokenizer.eos_token
 
         def preprocess_function(examples):

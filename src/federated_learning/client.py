@@ -15,6 +15,7 @@ from transformers.data.data_collator import pad_without_fast_tokenizer_warning
 from peft import PeftModel
 from datasets import load_from_disk
 
+from src.utils.hf import hf_from_pretrained_kwargs
 
 @dataclass
 class CausalLMDataCollatorWithPadding:
@@ -93,6 +94,7 @@ class ClientTrainer:
 
     def _load_model_for_training(self, round_num):
         """Loads the global model from the previous round and prepares it for training."""
+        hf_kwargs = hf_from_pretrained_kwargs(self.config)
         model_path = os.path.join(
             self.config['results_path'],
             self.config['simulation_name'],
@@ -103,23 +105,24 @@ class ClientTrainer:
 
         if 'bert' in self.model_name.lower():
             if self.use_lora:
-                model = AutoModelForMaskedLM.from_pretrained(self.model_name)
+                model = AutoModelForMaskedLM.from_pretrained(self.model_name, **hf_kwargs)
                 if torch.cuda.is_available():
                     model = model.to(f"cuda:{self.gpu_id}")
                 model = PeftModel.from_pretrained(model, model_path, is_trainable=True)
             else:
-                model = AutoModelForMaskedLM.from_pretrained(model_path)
+                model = AutoModelForMaskedLM.from_pretrained(model_path, **hf_kwargs)
         else:
             if self.use_lora:
                 model = AutoModelForCausalLM.from_pretrained(
                     self.model_name,
                     torch_dtype=torch.float16,
+                    **hf_kwargs,
                 )
                 if torch.cuda.is_available():
                     model = model.to(f"cuda:{self.gpu_id}")
                 model = PeftModel.from_pretrained(model, model_path, is_trainable=True)
             else:
-                model = AutoModelForCausalLM.from_pretrained(model_path)
+                model = AutoModelForCausalLM.from_pretrained(model_path, **hf_kwargs)
         
         return model
 
@@ -176,7 +179,7 @@ class ClientTrainer:
 
         # 4. Setup Trainer (FedProxTrainer if mu > 0, else standard Trainer)
         if 'bert' in self.model_name.lower():
-            tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            tokenizer = AutoTokenizer.from_pretrained(self.model_name, **hf_from_pretrained_kwargs(self.config))
             data_collator = DataCollatorForLanguageModeling(
                 tokenizer=tokenizer, mlm=True, mlm_probability=0.15
             )
@@ -197,7 +200,7 @@ class ClientTrainer:
                     data_collator=data_collator
                 )
         else:
-            tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            tokenizer = AutoTokenizer.from_pretrained(self.model_name, **hf_from_pretrained_kwargs(self.config))
             tokenizer.pad_token = tokenizer.eos_token
             data_collator = CausalLMDataCollatorWithPadding(tokenizer=tokenizer)
 

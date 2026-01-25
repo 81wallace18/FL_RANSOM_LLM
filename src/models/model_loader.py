@@ -3,6 +3,8 @@ import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForMaskedLM
 from peft import LoraConfig, get_peft_model
 
+from src.utils.hf import hf_from_pretrained_kwargs
+
 def initialize_global_model(config):
     """
     Initializes a model and tokenizer from Hugging Face, applies LoRA if configured,
@@ -18,15 +20,16 @@ def initialize_global_model(config):
     use_lora = config['lora']
     
     print(f"Initializing model: {model_name}")
+    hf_kwargs = hf_from_pretrained_kwargs(config)
 
     # Determine model type (e.g., BERT vs. GPT-like)
     if 'bert' in model_name.lower():
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        model = AutoModelForMaskedLM.from_pretrained(model_name)
+        tokenizer = AutoTokenizer.from_pretrained(model_name, **hf_kwargs)
+        model = AutoModelForMaskedLM.from_pretrained(model_name, **hf_kwargs)
     else:
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        tokenizer = AutoTokenizer.from_pretrained(model_name, **hf_kwargs)
         tokenizer.pad_token = tokenizer.eos_token
-        model = AutoModelForCausalLM.from_pretrained(model_name)
+        model = AutoModelForCausalLM.from_pretrained(model_name, **hf_kwargs)
 
     if use_lora:
         print(f"Applying LoRA with rank={config['lora_rank']}...")

@@ -9,6 +9,8 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
+from src.utils.hf import hf_from_pretrained_kwargs
+
 class Evaluator:
     """
     Handles the evaluation of the trained global models from each round
@@ -115,7 +117,7 @@ class Evaluator:
         Main evaluation loop, adapted from the original script.
         """
         print("--- Starting Evaluation (Antigo Method) ---")
-        tokenizer = AutoTokenizer.from_pretrained(self.config['model_name'])
+        tokenizer = AutoTokenizer.from_pretrained(self.config['model_name'], **hf_from_pretrained_kwargs(self.config))
         tokenizer.pad_token = tokenizer.eos_token
 
         all_f1_results = []
@@ -129,11 +131,11 @@ class Evaluator:
                 print(f"Model for round {round_num} not found. Skipping.")
                 continue
 
-            base_model = AutoModelForCausalLM.from_pretrained(self.config['model_name'])
+            base_model = AutoModelForCausalLM.from_pretrained(self.config['model_name'], **hf_from_pretrained_kwargs(self.config))
             if self.config['lora']:
                 model = PeftModel.from_pretrained(base_model, model_path)
             else:
-                model = AutoModelForCausalLM.from_pretrained(model_path)
+                model = AutoModelForCausalLM.from_pretrained(model_path, **hf_from_pretrained_kwargs(self.config))
 
             acc_df = self._calculate_top_k_accuracy(model, tokenizer)
             acc_df['label'] = self.test_labels

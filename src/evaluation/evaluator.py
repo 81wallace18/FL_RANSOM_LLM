@@ -10,6 +10,8 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
+from src.utils.hf import hf_from_pretrained_kwargs
+
 class Evaluator:
     """
     Handles the evaluation of the trained global models from each round.
@@ -394,7 +396,7 @@ class Evaluator:
         and saves results.
         """
         print("--- Starting Evaluation ---")
-        tokenizer = AutoTokenizer.from_pretrained(self.config['model_name'])
+        tokenizer = AutoTokenizer.from_pretrained(self.config['model_name'], **hf_from_pretrained_kwargs(self.config))
         tokenizer.pad_token = tokenizer.eos_token
 
         all_f1_results = []
@@ -426,11 +428,11 @@ class Evaluator:
 
             print("Loading model...")
             # Load model for the current round
-            base_model = AutoModelForCausalLM.from_pretrained(self.config['model_name'])
+            base_model = AutoModelForCausalLM.from_pretrained(self.config['model_name'], **hf_from_pretrained_kwargs(self.config))
             if self.config['lora']:
                 model = PeftModel.from_pretrained(base_model, model_path)
             else:
-                model = AutoModelForCausalLM.from_pretrained(model_path)
+                model = AutoModelForCausalLM.from_pretrained(model_path, **hf_from_pretrained_kwargs(self.config))
 
             # Optional inference benchmark (deployability)
             if self.config.get('benchmark_inference', False) and int(round_num) in benchmark_rounds:

@@ -92,7 +92,7 @@ class Evaluator:
                 if (i + 1) % 100 == 0:
                     print(f"\r  Calculating accuracy (Antigo Method)... {i + 1}/{total_texts}", end="")
 
-                inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=1024)
+                inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=1024, padding_side="right")
                 inputs = {key: val.to(self.device) for key, val in inputs.items()}
                 
                 outputs = model(**inputs)

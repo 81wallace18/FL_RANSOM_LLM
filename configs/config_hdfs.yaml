@@ -46,6 +46,7 @@ gradient_accumulation_steps: 4  # effective batch = 8 * 4 = 32 (same as legacy)
 initial_lr: 0.001
 min_lr: 0.00001
 lr_scheduler_type: 'cosine'
+trainer_lr_scheduler_type: 'constant'  # Legacy behavior: LR calculated externally, Trainer uses constant
 weight_decay: 0.01
 fp16: true
 optim: 'paged_adamw_8bit'
@@ -53,3 +54,4 @@ optim: 'paged_adamw_8bit'
 # --- Evaluation Settings ---
 top_k_values: [1, 3, 5, 10]
 f1_threshold_steps: 1000
+evaluator_version: "old"  # Legacy: balanced 1000/1000 evaluation

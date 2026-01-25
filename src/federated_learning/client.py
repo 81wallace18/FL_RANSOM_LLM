@@ -202,7 +202,13 @@ class ClientTrainer:
         else:
             tokenizer = AutoTokenizer.from_pretrained(self.model_name, **hf_from_pretrained_kwargs(self.config))
             tokenizer.pad_token = tokenizer.eos_token
-            data_collator = CausalLMDataCollatorWithPadding(tokenizer=tokenizer)
+
+            # Legacy mode: don't use data_collator (like original utils.py)
+            use_legacy_trainer = self.config.get('use_legacy_trainer', False)
+            if use_legacy_trainer:
+                data_collator = None
+            else:
+                data_collator = CausalLMDataCollatorWithPadding(tokenizer=tokenizer)
 
             if fedprox_mu > 0:
                 trainer = FedProxTrainer(
@@ -212,6 +218,7 @@ class ClientTrainer:
                     args=training_args,
                     train_dataset=client_dataset,
                     data_collator=data_collator,
+                    tokenizer=tokenizer if use_legacy_trainer else None,
                 )
             else:
                 trainer = Trainer(
@@ -219,6 +226,7 @@ class ClientTrainer:
                     args=training_args,
                     train_dataset=client_dataset,
                     data_collator=data_collator,
+                    tokenizer=tokenizer if use_legacy_trainer else None,
                 )
 
         # 5. Run Training

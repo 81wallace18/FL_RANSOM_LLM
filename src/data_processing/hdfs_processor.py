@@ -129,6 +129,9 @@ class HDFSProcessor(BaseProcessor):
         def preprocess_function(examples):
             examples["text"] = [text + tokenizer.eos_token for text in examples["text"]]
             max_len = int(self.config.get("max_length", self.config.get("eval_max_length", 1024)))
+            # Legacy mode: use padding_side="right" like original tokenize_dataset.py
+            if self.config.get('use_legacy_tokenization', False):
+                return tokenizer(examples["text"], padding="max_length", truncation=True, max_length=max_len, padding_side="right")
             return tokenizer(examples["text"], padding="max_length", truncation=True, max_length=max_len)
 
         tokenized_datasets = dataset.map(preprocess_function, batched=True, remove_columns=['text'])

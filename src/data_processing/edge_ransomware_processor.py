@@ -79,7 +79,9 @@ class EdgeRansomwareProcessor(BaseProcessor):
         benign_df = pd.read_csv(benign_path, skipinitialspace=True, low_memory=False)
 
         print(f"Loading ransomware flows from: {ransomware_path}")
-        ransomware_df = pd.read_csv(ransomware_path, skipinitialspace=True, low_memory=False)
+        ransomware_df = pd.read_csv(
+            ransomware_path, skipinitialspace=True, low_memory=False
+        )
 
         benign_df = self._normalize_ip_columns(benign_df)
         ransomware_df = self._normalize_ip_columns(ransomware_df)
@@ -152,7 +154,9 @@ class EdgeRansomwareProcessor(BaseProcessor):
         out = df.loc[mask].copy()
         after = len(out)
         if before != after:
-            print(f"IP filter ({label}): {before} -> {after} rows (filter_ipv4_only={filter_ipv4_only}, drop_zero_ips={drop_zero_ips})")
+            print(
+                f"IP filter ({label}): {before} -> {after} rows (filter_ipv4_only={filter_ipv4_only}, drop_zero_ips={drop_zero_ips})"
+            )
         return out
 
     def _build_text_from_row_raw(self, row):
@@ -230,7 +234,9 @@ class EdgeRansomwareProcessor(BaseProcessor):
         benign_calib_frac = float(self.config.get("benign_calibration_fraction", 0.0))
         benign_calib_frac = min(max(benign_calib_frac, 0.0), 1.0)
         benign_train_cap = self.config.get("benign_train_cap", None)
-        benign_train_cap = int(benign_train_cap) if benign_train_cap is not None else None
+        benign_train_cap = (
+            int(benign_train_cap) if benign_train_cap is not None else None
+        )
         balance_test = bool(self.config.get("test_balance", False))
         balance_seed = int(self.config.get("test_balance_seed", 42))
 
@@ -244,9 +250,11 @@ class EdgeRansomwareProcessor(BaseProcessor):
             n = min(len(benign_df), len(ransom_df))
             benign_sample = benign_df.sample(n=n, random_state=seed)
             ransom_sample = ransom_df.sample(n=n, random_state=seed)
-            return pd.concat([benign_sample, ransom_sample], ignore_index=True).sample(
-                frac=1.0, random_state=seed
-            ).reset_index(drop=True)
+            return (
+                pd.concat([benign_sample, ransom_sample], ignore_index=True)
+                .sample(frac=1.0, random_state=seed)
+                .reset_index(drop=True)
+            )
 
         cols_base = ["Flow ID", "Src IP", "Dst IP", "Timestamp", "Attack Name", "Label"]
 
@@ -259,7 +267,9 @@ class EdgeRansomwareProcessor(BaseProcessor):
             # Split paper-grade benign-only:
             # - Treino: apenas benigno (benign-only training)
             # - Teste: holdout benigno + TODO ransomware (evita "quebrar" o ataque no split)
-            benign_shuffled = benign_df.sample(frac=1.0, random_state=42).reset_index(drop=True)
+            benign_shuffled = benign_df.sample(frac=1.0, random_state=42).reset_index(
+                drop=True
+            )
             total_benign = len(benign_shuffled)
             if benign_train_cap is not None:
                 train_len = min(int(benign_train_cap), total_benign)
@@ -271,8 +281,10 @@ class EdgeRansomwareProcessor(BaseProcessor):
                 calib_len = max(0, total_benign - train_len)
 
             benign_train = benign_shuffled.iloc[:train_len].copy()
-            benign_calib = benign_shuffled.iloc[train_len:train_len + calib_len].copy()
-            benign_holdout = benign_shuffled.iloc[train_len + calib_len:].copy()
+            benign_calib = benign_shuffled.iloc[
+                train_len : train_len + calib_len
+            ].copy()
+            benign_holdout = benign_shuffled.iloc[train_len + calib_len :].copy()
 
             # Compute bin edges from benign training split ONLY (avoid leakage).
             num_bins = int(self.config.get("binning_num_bins", 32))
@@ -293,7 +305,9 @@ class EdgeRansomwareProcessor(BaseProcessor):
             edges_by_key = {}
             transform_by_key = {}
             for key, col in feature_map.items():
-                edges, used_transform = self._compute_quantile_edges(benign_train[col].values, num_bins, transform=transform)
+                edges, used_transform = self._compute_quantile_edges(
+                    benign_train[col].values, num_bins, transform=transform
+                )
                 edges_by_key[key] = edges
                 transform_by_key[key] = used_transform
 
@@ -302,43 +316,68 @@ class EdgeRansomwareProcessor(BaseProcessor):
                 benign_train["Total Fwd Packet"].apply(self._to_float).values
                 + benign_train["Total Bwd packets"].apply(self._to_float).values
             )
-            edges, used_transform = self._compute_quantile_edges(pkts_total_vals, num_bins, transform="none")
+            edges, used_transform = self._compute_quantile_edges(
+                pkts_total_vals, num_bins, transform="none"
+            )
             edges_by_key["pkts_total"] = edges
             transform_by_key["pkts_total"] = used_transform
 
             benign_train["Content"] = benign_train.apply(
-                lambda r: self._build_text_from_row_binned(r, edges_by_key=edges_by_key, transform_by_key=transform_by_key),
+                lambda r: self._build_text_from_row_binned(
+                    r, edges_by_key=edges_by_key, transform_by_key=transform_by_key
+                ),
                 axis=1,
             )
             benign_calib["Content"] = benign_calib.apply(
-                lambda r: self._build_text_from_row_binned(r, edges_by_key=edges_by_key, transform_by_key=transform_by_key),
+                lambda r: self._build_text_from_row_binned(
+                    r, edges_by_key=edges_by_key, transform_by_key=transform_by_key
+                ),
                 axis=1,
             )
             benign_holdout["Content"] = benign_holdout.apply(
-                lambda r: self._build_text_from_row_binned(r, edges_by_key=edges_by_key, transform_by_key=transform_by_key),
+                lambda r: self._build_text_from_row_binned(
+                    r, edges_by_key=edges_by_key, transform_by_key=transform_by_key
+                ),
                 axis=1,
             )
             ransomware_part = ransomware_df.copy()
             ransomware_part["Content"] = ransomware_part.apply(
-                lambda r: self._build_text_from_row_binned(r, edges_by_key=edges_by_key, transform_by_key=transform_by_key),
+                lambda r: self._build_text_from_row_binned(
+                    r, edges_by_key=edges_by_key, transform_by_key=transform_by_key
+                ),
                 axis=1,
             )
 
             train_df = benign_train[cols_base + ["Content"]].reset_index(drop=True)
             calib_df = benign_calib[cols_base + ["Content"]].reset_index(drop=True)
-            test_df = pd.concat(
-                [benign_holdout[cols_base + ["Content"]], ransomware_part[cols_base + ["Content"]]],
-                ignore_index=True,
-            ).sample(frac=1.0, random_state=42).reset_index(drop=True)
+            test_df = (
+                pd.concat(
+                    [
+                        benign_holdout[cols_base + ["Content"]],
+                        ransomware_part[cols_base + ["Content"]],
+                    ],
+                    ignore_index=True,
+                )
+                .sample(frac=1.0, random_state=42)
+                .reset_index(drop=True)
+            )
             test_df = _balance_test(test_df, seed=balance_seed)
         else:
             # Raw mode: build from the full raw frames first, then split.
             benign_full = benign_df.copy()
             ransomware_full = ransomware_df.copy()
-            benign_full["Content"] = benign_full.apply(self._build_text_from_row_raw, axis=1)
-            ransomware_full["Content"] = ransomware_full.apply(self._build_text_from_row_raw, axis=1)
+            benign_full["Content"] = benign_full.apply(
+                self._build_text_from_row_raw, axis=1
+            )
+            ransomware_full["Content"] = ransomware_full.apply(
+                self._build_text_from_row_raw, axis=1
+            )
 
-            benign_final = benign_full[cols_base + ["Content"]].sample(frac=1.0, random_state=42).reset_index(drop=True)
+            benign_final = (
+                benign_full[cols_base + ["Content"]]
+                .sample(frac=1.0, random_state=42)
+                .reset_index(drop=True)
+            )
             total_benign = len(benign_final)
             if benign_train_cap is not None:
                 train_len = min(int(benign_train_cap), total_benign)
@@ -350,8 +389,12 @@ class EdgeRansomwareProcessor(BaseProcessor):
                 calib_len = max(0, total_benign - train_len)
 
             train_df = benign_final[:train_len].reset_index(drop=True)
-            calib_df = benign_final[train_len:train_len + calib_len].reset_index(drop=True)
-            benign_test_df = benign_final[train_len + calib_len:].reset_index(drop=True)
+            calib_df = benign_final[train_len : train_len + calib_len].reset_index(
+                drop=True
+            )
+            benign_test_df = benign_final[train_len + calib_len :].reset_index(
+                drop=True
+            )
 
             ransomware_final = ransomware_full[cols_base + ["Content"]].copy()
             test_df = pd.concat([benign_test_df, ransomware_final], ignore_index=True)
@@ -361,12 +404,22 @@ class EdgeRansomwareProcessor(BaseProcessor):
         os.makedirs(self.processed_path, exist_ok=True)
         train_df.to_csv(os.path.join(self.processed_path, "train.csv"), index=False)
         if benign_calib_frac > 0.0:
-            calib_df.to_csv(os.path.join(self.processed_path, "calibration.csv"), index=False)
+            calib_df.to_csv(
+                os.path.join(self.processed_path, "calibration.csv"), index=False
+            )
         test_df.to_csv(os.path.join(self.processed_path, "test.csv"), index=False)
 
-        calib_benign = int((calib_df["Label"] == 0).sum()) if benign_calib_frac > 0.0 and "Label" in calib_df.columns else 0
-        test_benign = int((test_df["Label"] == 0).sum()) if "Label" in test_df.columns else 0
-        test_ransomware = int((test_df["Label"] == 1).sum()) if "Label" in test_df.columns else 0
+        calib_benign = (
+            int((calib_df["Label"] == 0).sum())
+            if benign_calib_frac > 0.0 and "Label" in calib_df.columns
+            else 0
+        )
+        test_benign = (
+            int((test_df["Label"] == 0).sum()) if "Label" in test_df.columns else 0
+        )
+        test_ransomware = (
+            int((test_df["Label"] == 1).sum()) if "Label" in test_df.columns else 0
+        )
         print(
             f"Created train.csv and test.csv in {self.processed_path} "
             f"(train benign={len(train_df)}, calib benign={calib_benign}, test benign={test_benign}, test ransomware={test_ransomware})"
@@ -422,24 +475,50 @@ class EdgeRansomwareProcessor(BaseProcessor):
         # não utilizadas quando remove_unused_columns=True).
         dataset = Dataset.from_pandas(
             df_normal[["Content", "Src IP", "Timestamp"]].rename(
-                columns={"Content": "text", "Src IP": "src_ip", "Timestamp": "timestamp"}
+                columns={
+                    "Content": "text",
+                    "Src IP": "src_ip",
+                    "Timestamp": "timestamp",
+                }
             )
         )
 
-        tokenizer = AutoTokenizer.from_pretrained(self.config["model_name"], **hf_from_pretrained_kwargs(self.config))
+        tokenizer = AutoTokenizer.from_pretrained(
+            self.config["model_name"], **hf_from_pretrained_kwargs(self.config)
+        )
         tokenizer.pad_token = tokenizer.eos_token
 
         def preprocess_function(examples):
             examples["text"] = [text + tokenizer.eos_token for text in examples["text"]]
-            max_len = int(self.config.get("max_length", self.config.get("eval_max_length", 1024)))
-            return tokenizer(
-                examples["text"],
-                truncation=True,
-                max_length=max_len,
+            max_len = int(
+                self.config.get("max_length", self.config.get("eval_max_length", 1024))
             )
+            use_legacy = bool(
+                self.config.get("use_legacy_tokenization", False)
+                or self.config.get("use_legacy_trainer", False)
+            )
+            if use_legacy:
+                return tokenizer(
+                    examples["text"],
+                    padding="max_length",
+                    truncation=True,
+                    max_length=max_len,
+                    padding_side="right",
+                )
+            return tokenizer(examples["text"], truncation=True, max_length=max_len)
 
-        tokenized = dataset.map(preprocess_function, batched=True, remove_columns=["text"])
+        tokenized = dataset.map(
+            preprocess_function, batched=True, remove_columns=["text"]
+        )
+
+        if self.config.get("use_legacy_trainer", False):
+            # Legacy-style Trainer expects labels to compute loss directly.
+            tokenized = tokenized.map(
+                lambda x: {"labels": x["input_ids"]}, batched=True
+            )
 
         final_dataset = DatasetDict({"train": tokenized})
         final_dataset.save_to_disk(self.tokenized_path)
-        print(f"Tokenized Edge-IIoTSet ransomware dataset saved to {self.tokenized_path}")
+        print(
+            f"Tokenized Edge-IIoTSet ransomware dataset saved to {self.tokenized_path}"
+        )

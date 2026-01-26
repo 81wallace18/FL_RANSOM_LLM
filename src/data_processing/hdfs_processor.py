@@ -39,8 +39,10 @@ class HDFSProcessor(BaseProcessor):
         headers, regex = re.split(r"(<[^<>]+>)", log_format), ""
         for k in range(len(headers)):
             if k % 2 == 0:
-                # Replace literal spaces with regex whitespace matcher.
-                regex += re.sub(" +", "\\s+", headers[k])
+                # Replace literal spaces with a regex whitespace matcher.
+                # NOTE: in re.sub replacement strings, backslashes are escapes,
+                # so we must emit a literal "\\s+".
+                regex += re.sub(" +", r"\\s+", headers[k])
             else:
                 header = headers[k].strip("<").strip(">")
                 regex += f"(?P<{header}>.*?)"

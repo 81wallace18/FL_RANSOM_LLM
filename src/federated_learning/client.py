@@ -1,6 +1,7 @@
 import os
 import json
 from dataclasses import dataclass
+import inspect
 from typing import Any
 import torch
 from transformers import (
@@ -191,30 +192,39 @@ class ClientTrainer:
         # 3. Setup Training Arguments
         legacy_training_args = bool(self.config.get("legacy_training_args", False))
         if legacy_training_args:
-            training_args = TrainingArguments(
-                output_dir="./fl-results",
-                logging_dir="./logs",
-                logging_steps=self.config["max_steps"] + 11,
-                learning_rate=learning_rate,
-                weight_decay=0.01,
-                max_steps=self.config["max_steps"],
-                num_train_epochs=1,
-                save_steps=1000,
-                evaluation_strategy="steps",
-                eval_steps=self.config["max_steps"] + 1,
-                fp16=True,
-                optim="paged_adamw_8bit",
-                per_device_train_batch_size=self.config["batch_size"],
-                gradient_accumulation_steps=self.config.get(
+            # transformers renamed evaluation_strategy -> eval_strategy (>=4.57)
+            ta_params = set(inspect.signature(TrainingArguments.__init__).parameters)
+            eval_key = (
+                "eval_strategy"
+                if "eval_strategy" in ta_params
+                else "evaluation_strategy"
+            )
+
+            ta_kwargs = {
+                "output_dir": "./fl-results",
+                "logging_dir": "./logs",
+                "logging_steps": self.config["max_steps"] + 11,
+                "learning_rate": learning_rate,
+                "weight_decay": 0.01,
+                "max_steps": self.config["max_steps"],
+                "num_train_epochs": 1,
+                "save_steps": 1000,
+                eval_key: "steps",
+                "eval_steps": self.config["max_steps"] + 1,
+                "fp16": True,
+                "optim": "paged_adamw_8bit",
+                "per_device_train_batch_size": self.config["batch_size"],
+                "gradient_accumulation_steps": self.config.get(
                     "gradient_accumulation_steps", 1
                 ),
-                lr_scheduler_type=self.config.get(
+                "lr_scheduler_type": self.config.get(
                     "trainer_lr_scheduler_type", self.config["lr_scheduler_type"]
                 ),
-                warmup_ratio=float(self.config.get("warmup_ratio", 0.0)),
-                max_grad_norm=float(self.config.get("max_grad_norm", 1.0)),
-                save_strategy="no",
-            )
+                "warmup_ratio": float(self.config.get("warmup_ratio", 0.0)),
+                "max_grad_norm": float(self.config.get("max_grad_norm", 1.0)),
+                "save_strategy": "no",
+            }
+            training_args = TrainingArguments(**ta_kwargs)
         else:
             training_args = TrainingArguments(
                 output_dir=os.path.join(
@@ -282,28 +292,49 @@ class ClientTrainer:
                 data_collator = CausalLMDataCollatorWithPadding(tokenizer=tokenizer)
 
             if fedprox_mu > 0:
+                trainer_kwargs = {
+                    "model": model,
+                    "args": training_args,
+                    "train_dataset": client_dataset,
+                    "data_collator": data_collator,
+                }
+                if use_legacy_trainer:
+                    tr_params = set(inspect.signature(Trainer.__init__).parameters)
+                    if "processing_class" in tr_params:
+                        trainer_kwargs["processing_class"] = tokenizer
+                    elif "tokenizer" in tr_params:
+                        trainer_kwargs["tokenizer"] = tokenizer
+
                 trainer = FedProxTrainer(
                     global_state_dict=global_state_dict,
                     fedprox_mu=fedprox_mu,
-                    model=model,
-                    args=training_args,
-                    train_dataset=client_dataset,
-                    data_collator=data_collator,
-                    tokenizer=tokenizer if use_legacy_trainer else None,
+                    **trainer_kwargs,
                 )
             else:
-                trainer = Trainer(
-                    model=model,
-                    args=training_args,
-                    train_dataset=client_dataset,
-                    data_collator=data_collator,
-                    tokenizer=tokenizer if use_legacy_trainer else None,
-                )
+                trainer_kwargs = {
+                    "model": model,
+                    "args": training_args,
+                    "train_dataset": client_dataset,
+                    "data_collator": data_collator,
+                }
+                if use_legacy_trainer:
+                    tr_params = set(inspect.signature(Trainer.__init__).parameters)
+                    if "processing_class" in tr_params:
+                        trainer_kwargs["processing_class"] = tokenizer
+                    elif "tokenizer" in tr_params:
+                        trainer_kwargs["tokenizer"] = tokenizer
+
+                trainer = Trainer(**trainer_kwargs)
 
             # Legacy behavior: eval_dataset=client_dataset when evaluation is enabled.
             if (
                 legacy_training_args
-                and getattr(training_args, "evaluation_strategy", "no") != "no"
+                and (
+                    getattr(training_args, "eval_strategy", None)
+                    if hasattr(training_args, "eval_strategy")
+                    else getattr(training_args, "evaluation_strategy", "no")
+                )
+                != "no"
             ):
                 trainer.eval_dataset = client_dataset
 

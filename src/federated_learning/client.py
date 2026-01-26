@@ -254,6 +254,16 @@ class ClientTrainer:
                 save_strategy="no",  # We save manually
             )
 
+        legacy_eval_enabled = False
+        if legacy_training_args:
+            eval_attr = (
+                getattr(training_args, "eval_strategy", None)
+                if hasattr(training_args, "eval_strategy")
+                else getattr(training_args, "evaluation_strategy", "no")
+            )
+            eval_mode = getattr(eval_attr, "value", eval_attr)
+            legacy_eval_enabled = str(eval_mode) != "no"
+
         # 4. Setup Trainer (FedProxTrainer if mu > 0, else standard Trainer)
         if "bert" in self.model_name.lower():
             tokenizer = AutoTokenizer.from_pretrained(
@@ -262,22 +272,22 @@ class ClientTrainer:
             data_collator = DataCollatorForLanguageModeling(
                 tokenizer=tokenizer, mlm=True, mlm_probability=0.15
             )
+            trainer_kwargs = {
+                "model": model,
+                "args": training_args,
+                "train_dataset": client_dataset,
+                "data_collator": data_collator,
+            }
+            if legacy_eval_enabled:
+                trainer_kwargs["eval_dataset"] = client_dataset
             if fedprox_mu > 0:
                 trainer = FedProxTrainer(
                     global_state_dict=global_state_dict,
                     fedprox_mu=fedprox_mu,
-                    model=model,
-                    args=training_args,
-                    train_dataset=client_dataset,
-                    data_collator=data_collator,
+                    **trainer_kwargs,
                 )
             else:
-                trainer = Trainer(
-                    model=model,
-                    args=training_args,
-                    train_dataset=client_dataset,
-                    data_collator=data_collator,
-                )
+                trainer = Trainer(**trainer_kwargs)
         else:
             tokenizer = AutoTokenizer.from_pretrained(
                 self.model_name, **hf_from_pretrained_kwargs(self.config)
@@ -298,6 +308,8 @@ class ClientTrainer:
                     "train_dataset": client_dataset,
                     "data_collator": data_collator,
                 }
+                if legacy_eval_enabled:
+                    trainer_kwargs["eval_dataset"] = client_dataset
                 if use_legacy_trainer:
                     tr_params = set(inspect.signature(Trainer.__init__).parameters)
                     if "processing_class" in tr_params:
@@ -317,6 +329,8 @@ class ClientTrainer:
                     "train_dataset": client_dataset,
                     "data_collator": data_collator,
                 }
+                if legacy_eval_enabled:
+                    trainer_kwargs["eval_dataset"] = client_dataset
                 if use_legacy_trainer:
                     tr_params = set(inspect.signature(Trainer.__init__).parameters)
                     if "processing_class" in tr_params:
@@ -325,18 +339,6 @@ class ClientTrainer:
                         trainer_kwargs["tokenizer"] = tokenizer
 
                 trainer = Trainer(**trainer_kwargs)
-
-            # Legacy behavior: eval_dataset=client_dataset when evaluation is enabled.
-            if (
-                legacy_training_args
-                and (
-                    getattr(training_args, "eval_strategy", None)
-                    if hasattr(training_args, "eval_strategy")
-                    else getattr(training_args, "evaluation_strategy", "no")
-                )
-                != "no"
-            ):
-                trainer.eval_dataset = client_dataset
 
         # 5. Run Training
         trainer.train()

@@ -1,9 +1,24 @@
 import yaml
 import argparse
 import os
+import copy
 from src.data_processing.ransomlog_processor import RansomLogProcessor
+from src.data_processing.hdfs_processor import HDFSProcessor
+from src.data_processing.edge_ransomware_processor import EdgeRansomwareProcessor
 from src.federated_learning.server import FederatedServer
-from src.evaluation.evaluator import Evaluator
+from src.evaluation.evaluator_antigo import Evaluator as OldEvaluator
+from src.evaluation.evaluator import Evaluator as NewEvaluator
+from src.utils.hf import apply_hf_environment
+
+def _merge_overrides(base: dict, overrides: dict) -> dict:
+    """
+    Shallow-merge overrides into a copy of base config.
+    Intended for evaluation-only overrides (thresholding, temporal settings, etc.).
+    """
+    merged = copy.deepcopy(base)
+    for k, v in (overrides or {}).items():
+        merged[k] = v
+    return merged
 
 def main(config_path):
     """
@@ -20,14 +35,18 @@ def main(config_path):
     print("Configuration loaded successfully.")
     print(f"Starting simulation: {config.get('simulation_name', 'N/A')}")
 
+    # Configure Hugging Face cache/offline behavior before any tokenizer/model loads.
+    apply_hf_environment(config)
+
     # 2. Execute Data Processing Pipeline
     # This factory pattern dynamically selects the correct processor based on the config.
     print("\n--- Initializing Data Processing ---")
     if config['dataset_name'] == 'ransomlog':
         processor = RansomLogProcessor(config)
-    # elif config['dataset_name'] == 'hdfs':
-    #     # processor = HDFSProcessor(config) # You can implement this later
-    #     pass
+    elif config['dataset_name'] in ('edge_ransomware', 'edge_ransomware_new'):
+        processor = EdgeRansomwareProcessor(config)
+    elif config['dataset_name'] == 'hdfs':
+        processor = HDFSProcessor(config)
     else:
         raise ValueError(f"Dataset '{config['dataset_name']}' not supported in the current implementation.")
     
@@ -40,12 +59,46 @@ def main(config_path):
     print("--- Federated Training Complete ---")
 
     # 4. Execute Evaluation
-    print("\n--- Starting Evaluation ---")
-    evaluator = Evaluator(config)
-    evaluator.evaluate()
-    print("--- Evaluation Complete ---")
+    evaluator_mode = config.get("evaluator_version", "old")
+
+    if evaluator_mode in ["old", "both"]:
+        print("\n--- Starting Evaluation (Antigo) ---")
+        old_evaluator = OldEvaluator(config)
+        old_evaluator.evaluate()
+        print("--- Evaluation (Antigo) Complete ---")
+
+    if evaluator_mode in ["new", "both"]:
+        print("\n--- Starting Evaluation (Novo) ---")
+        new_evaluator = NewEvaluator(config)
+        new_evaluator.evaluate()
+        print("--- Evaluation (Novo) Complete ---")
+
+    # 5. Optional additional evaluation runs (e.g., operational fpr_target + temporal metrics)
+    evaluation_runs = config.get("evaluation_runs", [])
+    if evaluation_runs:
+        print("\n--- Starting Additional Evaluations (Overrides) ---")
+        for i, run_cfg in enumerate(evaluation_runs, start=1):
+            name = run_cfg.get("name", f"eval_{i}")
+            overrides = run_cfg.get("overrides", {})
+            eval_config = _merge_overrides(config, overrides)
+            print(f"\n--- Evaluation Override {i}/{len(evaluation_runs)}: {name} ---")
+            evaluator = NewEvaluator(eval_config)
+            evaluator.evaluate()
+        print("--- Additional Evaluations Complete ---")
+
+import multiprocessing as mp
 
 if __name__ == "__main__":
+    # Define o método de início de multiprocessamento como 'spawn'.
+    # Isso é crucial para evitar erros de inicialização da CUDA em processos filhos.
+    # Deve ser chamado dentro deste bloco if e antes de qualquer código de paralelismo.
+    try:
+        mp.set_start_method('spawn', force=True)
+        print("Método de início de multiprocessamento configurado para 'spawn'.")
+    except RuntimeError:
+        # Pode já ter sido definido, o que não é um problema.
+        pass
+
     parser = argparse.ArgumentParser(description="Run Federated Learning for Anomaly Detection.")
     parser.add_argument('--config', type=str, default='configs/config.yaml',
                         help='Path to the YAML configuration file.')

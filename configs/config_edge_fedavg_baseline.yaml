@@ -1,0 +1,74 @@
+# configs/config_edge_fedavg_baseline.yaml
+# Baseline configuration for comparison: FedAvg (no FedProx)
+
+# --- General Experiment Settings ---
+simulation_name: "EdgeRansomware_SmolLM135M_FedAvg_Baseline"
+dataset_name: "edge_ransomware"
+description: "Baseline FedAvg experiment for comparison with FedProx. Same settings except fedprox_mu=0."
+
+# --- Paths ---
+data_base_path: "./data/ids_ransomware/"
+results_path: "./results/"
+
+# --- Data Processing Settings ---
+session_window_spliter: " ;-; "
+force_reprocess_data: True
+benign_train_fraction: 0.8     # Split: train uses only benign; test = benign holdout + all ransomware
+
+# --- Model Settings ---
+model_name: "HuggingFaceTB/SmolLM-135M"
+lora: True
+lora_rank: 16                # Same as FedProx experiment
+lora_alpha_multiplier: 2     # alpha = 32 (2x rank)
+lora_dropout: 0.1
+
+# --- Federated Learning Settings ---
+use_parallel_training: true
+num_rounds: 40
+num_clients: 50
+client_frac: 0.3
+
+# Data distribution and client behavior
+data_distribution_strategy: "hetero_device"
+non_iid_alpha: 0.5
+
+# Client selection and aggregation
+client_selection_strategy: "data_size_proportional"
+use_weighted_aggregation: true
+
+# FedProx DISABLED for baseline comparison
+fedprox_mu: 0.0
+
+# --- Client Training Settings ---
+max_steps: 50
+batch_size: 4
+gradient_accumulation_steps: 32
+initial_lr: 0.0005
+min_lr: 0.00001
+lr_scheduler_type: 'cosine'
+
+# --- Evaluation Settings ---
+top_k_values: [1, 3, 5, 10]
+f1_threshold_steps: 1000
+enable_temporal_metrics: true
+
+# --- Decision / Thresholding ---
+threshold_selection: "f1_max"
+fpr_target: 0.01
+calibration_source: "train_benign"
+calibration_num_samples: 2000
+
+# --- Temporal aggregation ---
+temporal_eval_mode: "flow"
+temporal_window_seconds: 30
+temporal_window_agg: "mean"
+
+# --- Inference benchmark ---
+benchmark_inference: false
+benchmark_rounds: [0, 40]
+benchmark_num_samples: 200
+benchmark_warmup: 10
+
+# Evaluation behavior
+evaluator_version: "both"
+accuracy_method: "shifted"

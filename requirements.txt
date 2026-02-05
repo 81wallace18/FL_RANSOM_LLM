@@ -7,3 +7,6 @@ bitsandbytes
 scikit-learn
 pyyaml
 accelerate
+numpy
+tqdm
+matplotlib

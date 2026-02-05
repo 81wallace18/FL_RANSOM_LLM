@@ -1,0 +1,50 @@
+# Evaluation-only (operational, window 30s) — edge_ransomware_new
+#
+# Re-evaluates an existing trained run:
+#   results/FINAL_PAPER_EDGE_NEW_LoRA16_FedProx_0005_Orig_R30
+#
+# Outputs go to:
+#   results/FINAL_PAPER_EDGE_NEW_LoRA16_FedProx_0005_Orig_R30/eval_fpr_target_window30s/
+#
+# Run:
+#   ./.venv/bin/python scripts/evaluate_only.py --config configs/final/eval_operational_paper_final_edge_new_window30s.yaml
+
+simulation_name: "FINAL_PAPER_EDGE_NEW_LoRA16_FedProx_0005_Orig_R30"
+dataset_name: "edge_ransomware_new"
+description: "Eval-only operational (window 30s): fpr_target=0.01 + temporal metrics for edge_ransomware_new paper-final run"
+
+data_base_path: "./data/ids_ransomware/"
+results_path: "./results/"
+evaluation_output_dir: "./results/FINAL_PAPER_EDGE_NEW_LoRA16_FedProx_0005_Orig_R30/eval_fpr_target_window30s"
+
+session_window_spliter: " ;-; "
+force_reprocess_data: false
+processed_required_files: ["train.csv", "calibration.csv", "test.csv"]
+
+benign_train_fraction: 0.8
+benign_calibration_fraction: 0.1
+content_mode: "raw"
+filter_ipv4_only: true
+drop_zero_ips: true
+
+model_name: "HuggingFaceTB/SmolLM-135M"
+lora: True
+lora_rank: 16
+lora_alpha_multiplier: 4
+lora_dropout: 0.1
+
+top_k_values: [1, 3, 5, 10]
+f1_threshold_steps: 1000
+
+threshold_selection: "fpr_target"
+fpr_target: 0.01
+calibration_source: "calibration_benign"
+calibration_num_samples: 0
+
+enable_temporal_metrics: true
+temporal_eval_mode: "window"
+temporal_window_seconds: 30
+temporal_window_agg: "min"
+
+evaluator_version: "new"
+accuracy_method: "original"

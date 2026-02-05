@@ -44,7 +44,11 @@ class BaseProcessor(ABC):
         Executes the full data processing pipeline.
         """
         print(f"--- Starting data processing for dataset: {self.dataset_name} ---")
-        if self.config.get('force_reprocess_data', False) or not os.path.exists(os.path.join(self.processed_path, 'train.csv')):
+        required = self.config.get("processed_required_files", ["train.csv", "test.csv"])
+        required_paths = [os.path.join(self.processed_path, f) for f in required]
+        missing_required = any(not os.path.exists(p) for p in required_paths)
+
+        if self.config.get('force_reprocess_data', False) or missing_required:
             print("Step 1: Creating sessions...")
             self.create_sessions()
             print("Step 2: Sanitizing data...")

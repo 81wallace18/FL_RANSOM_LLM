@@ -6,7 +6,7 @@
 
 simulation_name: "FINAL_PAPER_LoRA16_FedProx_0005_Orig_R30_FullTest"
 dataset_name: "edge_ransomware"
-description: "Paper final (full test): SmolLM-135M + LoRA16 + FedProx(mu=0.0005), 30 rounds, full test (no calibration split)."
+description: "SmolLM-135M + LoRA16 + FedProx(mu=0.0005), 30 rounds, full test (no calibration split)."
 
 data_base_path: "./data/ids_ransomware/"
 results_path: "./results/"

@@ -165,8 +165,14 @@ initial_lr: 0.001
 
 ### 3. Run Training
 
+**FL-TFlow (our method):**
 ```bash
-python main.py --config configs/config.yaml
+python main.py --config configs/config_paper.yaml
+```
+
+**Baseline (Talasso et al.):**
+```bash
+python main.py --config configs/config_paper_basiline.yaml
 ```
 
 The pipeline will:
@@ -174,6 +180,34 @@ The pipeline will:
 2. Initialize the global SLM with LoRA
 3. Run federated training for the specified rounds
 4. Evaluate and save results to `results/<simulation_name>/`
+
+## Reproducibility
+
+### Dataset Preparation
+
+The dataset files are included in the repository as compressed archives. Extract them before running:
+
+```bash
+cd data/ids_ransomware/edge_ransomware/raw/
+gunzip Benign%20Traffic.csv.gz
+gunzip Ransomware.csv.gz
+```
+
+### Running the Experiments
+
+After extracting the dataset, run the training:
+
+```bash
+# FL-TFlow (our method)
+python main.py --config configs/config_paper.yaml
+
+# Baseline (Talasso et al.)
+python main.py --config configs/config_paper_basiline.yaml
+```
+
+### Generating Figures
+
+After training completes, run the Jupyter notebook `imagens.ipynb` to generate the paper figures in the `plot/` directory
 
 ## Configuration Parameters
 

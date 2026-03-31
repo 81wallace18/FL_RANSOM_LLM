@@ -57,7 +57,7 @@ class FederatedServer:
         self.config = config
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.global_model, self.tokenizer = initialize_global_model(config)
-        self.global_model.to(self.device)
+        self.global_model.to("cpu")
 
         # Mantém metadados sobre o tamanho de cada shard de cliente para
         # permitir seleção adaptativa e agregação ponderada.
@@ -167,10 +167,7 @@ class FederatedServer:
         if self.config["lora"]:
             self._set_adapters(self.global_model, aggregated_weights)
         else:
-            gpu_aggregated_weights = {
-                k: v.to(self.device) for k, v in aggregated_weights.items()
-            }
-            self.global_model.load_state_dict(gpu_aggregated_weights)
+            self.global_model.load_state_dict(aggregated_weights)
 
     def _save_communication_metrics(self):
         if not self.communication_metrics:
@@ -732,9 +729,6 @@ class FederatedServer:
                                 del cpu_weights
                         except Exception as e:
                             print(f"Erro ao treinar cliente: {e}")
-
-            # Mover o modelo de volta para a GPU para agregação
-            self.global_model.to(self.device)
 
             print("Aggregating client models...")
             if aggregated_weights is None:

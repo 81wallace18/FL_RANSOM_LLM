@@ -1,3 +1,4 @@
+import gc
 import os
 import json
 from dataclasses import dataclass
@@ -198,6 +199,9 @@ class ClientTrainer:
         use_gradient_checkpointing = bool(
             self.config.get("gradient_checkpointing", False)
         )
+        optimizer_name = str(
+            self.config.get("optimizer_name", "paged_adamw_8bit")
+        )
         if legacy_training_args:
             # transformers renamed evaluation_strategy -> eval_strategy (>=4.57)
             ta_params = set(inspect.signature(TrainingArguments.__init__).parameters)
@@ -220,7 +224,7 @@ class ClientTrainer:
                 "eval_steps": self.config["max_steps"] + 1,
                 "fp16": use_fp16,
                 "bf16": use_bf16,
-                "optim": "paged_adamw_8bit",
+                "optim": optimizer_name,
                 "per_device_train_batch_size": self.config["batch_size"],
                 "gradient_accumulation_steps": self.config.get(
                     "gradient_accumulation_steps", 1
@@ -245,6 +249,10 @@ class ClientTrainer:
                 empty_cache_steps = self.config.get("torch_empty_cache_steps")
                 if empty_cache_steps:
                     ta_kwargs["torch_empty_cache_steps"] = int(empty_cache_steps)
+            if "dataloader_pin_memory" in ta_params:
+                ta_kwargs["dataloader_pin_memory"] = bool(
+                    self.config.get("dataloader_pin_memory", True)
+                )
             training_args = TrainingArguments(**ta_kwargs)
         else:
             ta_params = set(inspect.signature(TrainingArguments.__init__).parameters)
@@ -263,7 +271,7 @@ class ClientTrainer:
                 "max_steps": self.config["max_steps"],
                 "fp16": use_fp16,
                 "bf16": use_bf16,
-                "optim": "paged_adamw_8bit",
+                "optim": optimizer_name,
                 "per_device_train_batch_size": self.config["batch_size"],
                 "gradient_accumulation_steps": self.config.get(
                     "gradient_accumulation_steps", 1
@@ -288,6 +296,10 @@ class ClientTrainer:
                 empty_cache_steps = self.config.get("torch_empty_cache_steps")
                 if empty_cache_steps:
                     ta_kwargs["torch_empty_cache_steps"] = int(empty_cache_steps)
+            if "dataloader_pin_memory" in ta_params:
+                ta_kwargs["dataloader_pin_memory"] = bool(
+                    self.config.get("dataloader_pin_memory", True)
+                )
             training_args = TrainingArguments(**ta_kwargs)
 
         legacy_eval_enabled = False
@@ -407,8 +419,14 @@ class ClientTrainer:
             }
 
         # Explicitly free up VRAM
+        del training_args
+        del tokenizer
+        del client_dataset
+        if global_state_dict is not None:
+            del global_state_dict
         del model
         del trainer
+        gc.collect()
         torch.cuda.empty_cache()
 
         return cpu_adapters

@@ -1,6 +1,6 @@
 simulation_name: "RELATED_LogBERT_Edge_FedAvg_R30"
 dataset_name: "edge_ransomware"
-description: "LogBERT-style masked LM baseline adapted to the Edge ransomware FL scenario."
+description: "Stable LogBERT-style masked LM baseline adapted to the Edge ransomware FL scenario."
 
 data_base_path: "./data/ids_ransomware/"
 results_path: "./results_related/"
@@ -17,8 +17,9 @@ model_name: "bert-base-uncased"
 model_family: "masked_lm"
 masked_lm: true
 lora: false
-huggingface_note: "Use low_cpu_mem_usage to reduce RAM peaks during repeated model loads."
+huggingface_note: "Stable profile: server model on CPU, low_cpu_mem_usage, bf16, and AdamW torch."
 hf_low_cpu_mem_usage: true
+optimizer_name: "adamw_torch"
 mlm_probability: 0.65
 eval_mask_ratio: 0.65
 
@@ -38,11 +39,13 @@ fedprox_mu: 0.0
 max_length: 512
 eval_max_length: 512
 max_steps: 50
-batch_size: 4
-gradient_accumulation_steps: 2
+batch_size: 2
+gradient_accumulation_steps: 4
 gradient_checkpointing: true
 torch_empty_cache_steps: 10
-fp16: true
+dataloader_pin_memory: false
+bf16: true
+fp16: false
 initial_lr: 0.0001
 min_lr: 0.00001
 lr_scheduler_type: "cosine"

@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import torch
 import time
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForMaskedLM
 from peft import PeftModel
 from sklearn.metrics import f1_score, precision_score, recall_score
 import warnings
@@ -11,6 +11,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from src.utils.hf import hf_from_pretrained_kwargs
+from src.models.task_utils import is_masked_lm_config
 
 
 class Evaluator:
@@ -21,6 +22,7 @@ class Evaluator:
     def __init__(self, config):
         self.config = config
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.use_masked_lm = is_masked_lm_config(config)
         self.results_dir = os.path.join(
             config["results_path"], config["simulation_name"]
         )
@@ -110,6 +112,96 @@ class Evaluator:
         """Helper function: checks if target_token is in the top-k predictions."""
         return target_token in top_k_preds
 
+    def _select_mask_positions(self, candidate_positions, num_masks):
+        if num_masks <= 0 or not candidate_positions:
+            return []
+        if num_masks >= len(candidate_positions):
+            return list(candidate_positions)
+
+        linspace_idx = np.linspace(
+            0, len(candidate_positions) - 1, num=num_masks, dtype=int
+        ).tolist()
+        selected = []
+        seen = set()
+        for idx in linspace_idx:
+            pos = candidate_positions[int(idx)]
+            if pos not in seen:
+                selected.append(pos)
+                seen.add(pos)
+        if len(selected) < num_masks:
+            for pos in candidate_positions:
+                if pos not in seen:
+                    selected.append(pos)
+                    seen.add(pos)
+                if len(selected) >= num_masks:
+                    break
+        return selected
+
+    def _calculate_masked_token_top_k_accuracy(self, model, tokenizer, texts, *, progress_label=""):
+        accuracies = {f"top{k}": [] for k in self.config["top_k_values"]}
+        model.to(self.device)
+        model.eval()
+
+        max_len = int(
+            self.config.get("eval_max_length", self.config.get("max_length", 1024))
+        )
+        mask_ratio = float(self.config.get("eval_mask_ratio", self.config.get("mlm_probability", 0.15)))
+        all_special_ids = set(getattr(tokenizer, "all_special_ids", []) or [])
+        if tokenizer.mask_token_id is None:
+            raise ValueError("Masked-LM evaluation requires a tokenizer with mask_token_id.")
+
+        total_texts = len(texts)
+        with torch.no_grad():
+            for i, text in enumerate(texts):
+                if (i + 1) % 100 == 0:
+                    label = f" ({progress_label})" if progress_label else ""
+                    print(
+                        f"\r  Calculating accuracy{label}... {i + 1}/{total_texts}",
+                        end="",
+                    )
+
+                encoded = tokenizer(
+                    str(text),
+                    return_tensors="pt",
+                    padding=True,
+                    truncation=True,
+                    max_length=max_len,
+                )
+                input_ids = encoded["input_ids"][0]
+                attention_mask = encoded["attention_mask"][0]
+                candidate_positions = [
+                    idx
+                    for idx, token_id in enumerate(input_ids.tolist())
+                    if attention_mask[idx].item() == 1 and int(token_id) not in all_special_ids
+                ]
+
+                if not candidate_positions:
+                    for k in self.config["top_k_values"]:
+                        accuracies[f"top{k}"].append(0.0)
+                    continue
+
+                num_masks = max(1, int(round(len(candidate_positions) * mask_ratio)))
+                mask_positions = self._select_mask_positions(candidate_positions, num_masks)
+
+                masked_input_ids = input_ids.clone()
+                for pos in mask_positions:
+                    masked_input_ids[pos] = tokenizer.mask_token_id
+
+                inputs = {
+                    "input_ids": masked_input_ids.unsqueeze(0).to(self.device),
+                    "attention_mask": attention_mask.unsqueeze(0).to(self.device),
+                }
+                logits = model(**inputs).logits[0]
+
+                target_tokens = input_ids[mask_positions].to(self.device)
+                masked_logits = logits[mask_positions]
+                for k in self.config["top_k_values"]:
+                    top_k_preds = torch.topk(masked_logits, k, dim=-1).indices
+                    correct = (top_k_preds == target_tokens.unsqueeze(-1)).any(dim=-1)
+                    accuracies[f"top{k}"].append(float(correct.float().mean().item()))
+
+        return pd.DataFrame(accuracies)
+
     def _calculate_top_k_accuracy_for_texts(
         self, model, tokenizer, texts, *, progress_label=""
     ):
@@ -122,6 +214,11 @@ class Evaluator:
         print(
             f"Calculating top-k accuracy{(' for ' + progress_label) if progress_label else ''}..."
         )
+        if self.use_masked_lm or self.config.get("accuracy_method") == "masked_token_topk":
+            return self._calculate_masked_token_top_k_accuracy(
+                model, tokenizer, texts, progress_label=progress_label
+            )
+
         accuracies = {f"top{k}": [] for k in self.config["top_k_values"]}
         model.to(self.device)
         model.eval()
@@ -437,7 +534,8 @@ class Evaluator:
         tokenizer = AutoTokenizer.from_pretrained(
             self.config["model_name"], **hf_from_pretrained_kwargs(self.config)
         )
-        tokenizer.pad_token = tokenizer.eos_token
+        if not self.use_masked_lm and tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
 
         all_f1_results = []
         all_temporal_results = []
@@ -470,15 +568,26 @@ class Evaluator:
 
             print("Loading model...")
             # Load model for the current round
-            base_model = AutoModelForCausalLM.from_pretrained(
-                self.config["model_name"], **hf_from_pretrained_kwargs(self.config)
-            )
-            if self.config["lora"]:
-                model = PeftModel.from_pretrained(base_model, model_path)
-            else:
-                model = AutoModelForCausalLM.from_pretrained(
-                    model_path, **hf_from_pretrained_kwargs(self.config)
+            if self.use_masked_lm:
+                base_model = AutoModelForMaskedLM.from_pretrained(
+                    self.config["model_name"], **hf_from_pretrained_kwargs(self.config)
                 )
+                if self.config["lora"]:
+                    model = PeftModel.from_pretrained(base_model, model_path)
+                else:
+                    model = AutoModelForMaskedLM.from_pretrained(
+                        model_path, **hf_from_pretrained_kwargs(self.config)
+                    )
+            else:
+                base_model = AutoModelForCausalLM.from_pretrained(
+                    self.config["model_name"], **hf_from_pretrained_kwargs(self.config)
+                )
+                if self.config["lora"]:
+                    model = PeftModel.from_pretrained(base_model, model_path)
+                else:
+                    model = AutoModelForCausalLM.from_pretrained(
+                        model_path, **hf_from_pretrained_kwargs(self.config)
+                    )
 
             # Optional inference benchmark (deployability)
             if (

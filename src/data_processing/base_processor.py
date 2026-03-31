@@ -11,7 +11,8 @@ class BaseProcessor(ABC):
         self.dataset_name = config['dataset_name']
         self.raw_path = os.path.join(config['data_base_path'], self.dataset_name, 'raw')
         self.processed_path = os.path.join(config['data_base_path'], self.dataset_name, 'processed')
-        self.tokenized_path = os.path.join(self.processed_path, 'tokenized')
+        self.tokenized_subdir = config.get('tokenized_subdir', 'tokenized')
+        self.tokenized_path = os.path.join(self.processed_path, self.tokenized_subdir)
         
         os.makedirs(self.raw_path, exist_ok=True)
         os.makedirs(self.processed_path, exist_ok=True)

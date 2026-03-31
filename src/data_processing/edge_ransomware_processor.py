@@ -7,6 +7,7 @@ from transformers import AutoTokenizer
 
 from .base_processor import BaseProcessor
 from src.utils.hf import hf_from_pretrained_kwargs
+from src.models.task_utils import is_masked_lm_config
 
 
 class EdgeRansomwareProcessor(BaseProcessor):
@@ -486,10 +487,14 @@ class EdgeRansomwareProcessor(BaseProcessor):
         tokenizer = AutoTokenizer.from_pretrained(
             self.config["model_name"], **hf_from_pretrained_kwargs(self.config)
         )
-        tokenizer.pad_token = tokenizer.eos_token
+        use_masked_lm = is_masked_lm_config(self.config)
+        if not use_masked_lm and tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
 
         def preprocess_function(examples):
-            examples["text"] = [text + tokenizer.eos_token for text in examples["text"]]
+            texts = [str(text) for text in examples["text"]]
+            if not use_masked_lm and tokenizer.eos_token:
+                texts = [text + tokenizer.eos_token for text in texts]
             max_len = int(
                 self.config.get("max_length", self.config.get("eval_max_length", 1024))
             )
@@ -499,13 +504,13 @@ class EdgeRansomwareProcessor(BaseProcessor):
             )
             if use_legacy:
                 return tokenizer(
-                    examples["text"],
+                    texts,
                     padding="max_length",
                     truncation=True,
                     max_length=max_len,
                     padding_side="right",
                 )
-            return tokenizer(examples["text"], truncation=True, max_length=max_len)
+            return tokenizer(texts, truncation=True, max_length=max_len)
 
         tokenized = dataset.map(
             preprocess_function, batched=True, remove_columns=["text"]

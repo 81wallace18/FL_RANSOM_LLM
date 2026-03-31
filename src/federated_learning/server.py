@@ -4,6 +4,7 @@ import math
 import json
 import csv
 import time
+import gc
 import torch
 import numpy as np
 from datasets import load_from_disk
@@ -87,6 +88,13 @@ class FederatedServer:
     def _record_round_communication(self, round_num, client_ids, client_updates):
         sizes = [self._weights_size_bytes(u) for u in client_updates]
         params = [self._weights_num_params(u) for u in client_updates]
+        self._record_round_communication_from_summaries(
+            round_num, client_ids, sizes, params
+        )
+
+    def _record_round_communication_from_summaries(
+        self, round_num, client_ids, sizes, params
+    ):
         total_bytes = int(sum(sizes))
         total_params = int(sum(params))
 
@@ -126,6 +134,43 @@ class FederatedServer:
                 "params_total": total_params,
             }
         )
+
+    def _init_incremental_aggregation(self, client_weights, client_weight):
+        aggregated_weights = {}
+        for key, tensor in client_weights.items():
+            if isinstance(tensor, torch.Tensor):
+                local_tensor = tensor.detach().clone()
+                if torch.is_floating_point(local_tensor):
+                    aggregated_weights[key] = local_tensor.mul(float(client_weight))
+                else:
+                    aggregated_weights[key] = local_tensor
+        return aggregated_weights
+
+    def _accumulate_incremental_aggregation(
+        self, aggregated_weights, client_weights, client_weight
+    ):
+        for key, tensor in client_weights.items():
+            if key not in aggregated_weights or not isinstance(tensor, torch.Tensor):
+                continue
+            if torch.is_floating_point(aggregated_weights[key]):
+                aggregated_weights[key].add_(tensor.detach(), alpha=float(client_weight))
+
+    def _finalize_incremental_aggregation(self, aggregated_weights, total_weight):
+        if not aggregated_weights or total_weight <= 0:
+            return aggregated_weights
+        for key, tensor in aggregated_weights.items():
+            if torch.is_floating_point(tensor):
+                tensor.div_(float(total_weight))
+        return aggregated_weights
+
+    def _apply_aggregated_weights(self, aggregated_weights):
+        if self.config["lora"]:
+            self._set_adapters(self.global_model, aggregated_weights)
+        else:
+            gpu_aggregated_weights = {
+                k: v.to(self.device) for k, v in aggregated_weights.items()
+            }
+            self.global_model.load_state_dict(gpu_aggregated_weights)
 
     def _save_communication_metrics(self):
         if not self.communication_metrics:
@@ -216,7 +261,7 @@ class FederatedServer:
             self.config["data_base_path"],
             self.config["dataset_name"],
             "processed",
-            "tokenized",
+            self.config.get("tokenized_subdir", "tokenized"),
         )
         dataset = load_from_disk(tokenized_dataset_path)["train"]
 
@@ -414,15 +459,7 @@ class FederatedServer:
                     dim=0,
                 )
 
-        if self.config["lora"]:
-            self._set_adapters(self.global_model, aggregated_weights)
-        else:
-            # For full fine-tuning, update the entire model state dict
-            # Move weights to GPU before loading them into the model
-            gpu_aggregated_weights = {
-                k: v.to(self.device) for k, v in aggregated_weights.items()
-            }
-            self.global_model.load_state_dict(gpu_aggregated_weights)
+        self._apply_aggregated_weights(aggregated_weights)
 
     def _select_clients_for_round(self, round_num):
         """
@@ -520,22 +557,56 @@ class FederatedServer:
 
             selected_clients_ids = self._select_clients_for_round(round_num)
 
-            client_weights_list = []
             successful_client_ids = []
+            update_sizes = []
+            update_params = []
+            aggregated_weights = None
+            total_aggregation_weight = 0.0
             current_lr = self._get_learning_rate(round_num)
             for client_id in selected_clients_ids:
                 client_trainer = ClientTrainer(client_id, self.config)
                 cpu_weights = client_trainer.train(round_num, current_lr)
                 if cpu_weights:
-                    client_weights_list.append(cpu_weights)
                     successful_client_ids.append(client_id)
+                    update_sizes.append(self._weights_size_bytes(cpu_weights))
+                    update_params.append(self._weights_num_params(cpu_weights))
+
+                    if self.config.get("use_weighted_aggregation", False):
+                        client_weight = float(
+                            self.client_sample_counts.get(client_id, 0)
+                        )
+                    else:
+                        client_weight = 1.0
+
+                    if client_weight <= 0:
+                        client_weight = 1.0
+
+                    if aggregated_weights is None:
+                        aggregated_weights = self._init_incremental_aggregation(
+                            cpu_weights, client_weight
+                        )
+                    else:
+                        self._accumulate_incremental_aggregation(
+                            aggregated_weights, cpu_weights, client_weight
+                        )
+                    total_aggregation_weight += client_weight
+                    del cpu_weights
+                    gc.collect()
 
             print("Aggregating client models...")
-            self._aggregate_models(client_weights_list, successful_client_ids)
+            if aggregated_weights is None:
+                print("Warning: No successful client updates. Skipping aggregation.")
+                continue
+            aggregated_weights = self._finalize_incremental_aggregation(
+                aggregated_weights, total_aggregation_weight
+            )
+            self._apply_aggregated_weights(aggregated_weights)
+            del aggregated_weights
+            gc.collect()
 
             # Communication metrics (bytes communicated this round)
-            self._record_round_communication(
-                round_num, successful_client_ids, client_weights_list
+            self._record_round_communication_from_summaries(
+                round_num, successful_client_ids, update_sizes, update_params
             )
 
             round_model_path = os.path.join(
@@ -600,8 +671,11 @@ class FederatedServer:
 
             selected_clients_ids = self._select_clients_for_round(round_num)
 
-            client_weights_list = []
             successful_client_ids = []
+            update_sizes = []
+            update_params = []
+            aggregated_weights = None
+            total_aggregation_weight = 0.0
             current_lr = self._get_learning_rate(round_num)
 
             # Mover o modelo global para a CPU para liberar VRAM para os clientes
@@ -626,8 +700,36 @@ class FederatedServer:
                         try:
                             cpu_weights = future.result()
                             if cpu_weights:
-                                client_weights_list.append(cpu_weights)
                                 successful_client_ids.append(client_id)
+                                update_sizes.append(
+                                    self._weights_size_bytes(cpu_weights)
+                                )
+                                update_params.append(
+                                    self._weights_num_params(cpu_weights)
+                                )
+                                if self.config.get("use_weighted_aggregation", False):
+                                    client_weight = float(
+                                        self.client_sample_counts.get(client_id, 0)
+                                    )
+                                else:
+                                    client_weight = 1.0
+                                if client_weight <= 0:
+                                    client_weight = 1.0
+
+                                if aggregated_weights is None:
+                                    aggregated_weights = (
+                                        self._init_incremental_aggregation(
+                                            cpu_weights, client_weight
+                                        )
+                                    )
+                                else:
+                                    self._accumulate_incremental_aggregation(
+                                        aggregated_weights,
+                                        cpu_weights,
+                                        client_weight,
+                                    )
+                                total_aggregation_weight += client_weight
+                                del cpu_weights
                         except Exception as e:
                             print(f"Erro ao treinar cliente: {e}")
 
@@ -635,11 +737,19 @@ class FederatedServer:
             self.global_model.to(self.device)
 
             print("Aggregating client models...")
-            self._aggregate_models(client_weights_list, successful_client_ids)
+            if aggregated_weights is None:
+                print("Warning: No successful client updates. Skipping aggregation.")
+                continue
+            aggregated_weights = self._finalize_incremental_aggregation(
+                aggregated_weights, total_aggregation_weight
+            )
+            self._apply_aggregated_weights(aggregated_weights)
+            del aggregated_weights
+            gc.collect()
 
             # Communication metrics (bytes communicated this round)
-            self._record_round_communication(
-                round_num, successful_client_ids, client_weights_list
+            self._record_round_communication_from_summaries(
+                round_num, successful_client_ids, update_sizes, update_params
             )
 
             round_model_path = os.path.join(

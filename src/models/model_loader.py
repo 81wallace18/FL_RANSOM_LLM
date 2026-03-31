@@ -4,6 +4,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForMasked
 from peft import LoraConfig, get_peft_model
 
 from src.utils.hf import hf_from_pretrained_kwargs
+from src.models.task_utils import is_masked_lm_config
 
 def initialize_global_model(config):
     """
@@ -23,7 +24,8 @@ def initialize_global_model(config):
     hf_kwargs = hf_from_pretrained_kwargs(config)
 
     # Determine model type (e.g., BERT vs. GPT-like)
-    if 'bert' in model_name.lower():
+    use_masked_lm = is_masked_lm_config(config)
+    if use_masked_lm:
         tokenizer = AutoTokenizer.from_pretrained(model_name, **hf_kwargs)
         model = AutoModelForMaskedLM.from_pretrained(model_name, **hf_kwargs)
     else:

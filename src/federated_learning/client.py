@@ -17,6 +17,7 @@ from peft import PeftModel
 from datasets import load_from_disk
 
 from src.utils.hf import hf_from_pretrained_kwargs
+from src.models.task_utils import is_masked_lm_config
 
 
 @dataclass
@@ -95,6 +96,7 @@ class ClientTrainer:
         self.gpu_id = gpu_id  # Armazena o ID da GPU
         self.model_name = config["model_name"]
         self.use_lora = config["lora"]
+        self.use_masked_lm = is_masked_lm_config(config)
 
     def _load_model_for_training(self, round_num):
         """Loads the global model from the previous round and prepares it for training."""
@@ -109,7 +111,7 @@ class ClientTrainer:
 
         legacy_4bit = bool(self.config.get("legacy_4bit_training", False))
 
-        if "bert" in self.model_name.lower():
+        if self.use_masked_lm:
             if self.use_lora:
                 model = AutoModelForMaskedLM.from_pretrained(
                     self.model_name, **hf_kwargs
@@ -265,12 +267,14 @@ class ClientTrainer:
             legacy_eval_enabled = str(eval_mode) != "no"
 
         # 4. Setup Trainer (FedProxTrainer if mu > 0, else standard Trainer)
-        if "bert" in self.model_name.lower():
+        if self.use_masked_lm:
             tokenizer = AutoTokenizer.from_pretrained(
                 self.model_name, **hf_from_pretrained_kwargs(self.config)
             )
             data_collator = DataCollatorForLanguageModeling(
-                tokenizer=tokenizer, mlm=True, mlm_probability=0.15
+                tokenizer=tokenizer,
+                mlm=True,
+                mlm_probability=float(self.config.get("mlm_probability", 0.15)),
             )
             trainer_kwargs = {
                 "model": model,

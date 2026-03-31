@@ -36,8 +36,11 @@ fedprox_mu: 0.0
 max_length: 512
 eval_max_length: 512
 max_steps: 1
-batch_size: 8
-gradient_accumulation_steps: 1
+batch_size: 4
+gradient_accumulation_steps: 2
+gradient_checkpointing: true
+torch_empty_cache_steps: 10
+fp16: true
 initial_lr: 0.0001
 min_lr: 0.00001
 lr_scheduler_type: "cosine"

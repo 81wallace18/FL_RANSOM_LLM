@@ -193,6 +193,11 @@ class ClientTrainer:
 
         # 3. Setup Training Arguments
         legacy_training_args = bool(self.config.get("legacy_training_args", False))
+        use_bf16 = bool(self.config.get("bf16", False)) and torch.cuda.is_available()
+        use_fp16 = bool(self.config.get("fp16", not use_bf16)) and not use_bf16
+        use_gradient_checkpointing = bool(
+            self.config.get("gradient_checkpointing", False)
+        )
         if legacy_training_args:
             # transformers renamed evaluation_strategy -> eval_strategy (>=4.57)
             ta_params = set(inspect.signature(TrainingArguments.__init__).parameters)
@@ -213,7 +218,8 @@ class ClientTrainer:
                 "save_steps": 1000,
                 eval_key: "steps",
                 "eval_steps": self.config["max_steps"] + 1,
-                "fp16": True,
+                "fp16": use_fp16,
+                "bf16": use_bf16,
                 "optim": "paged_adamw_8bit",
                 "per_device_train_batch_size": self.config["batch_size"],
                 "gradient_accumulation_steps": self.config.get(
@@ -226,35 +232,63 @@ class ClientTrainer:
                 "max_grad_norm": float(self.config.get("max_grad_norm", 1.0)),
                 "save_strategy": "no",
             }
+            if "gradient_checkpointing" in ta_params:
+                ta_kwargs["gradient_checkpointing"] = use_gradient_checkpointing
+            if (
+                use_gradient_checkpointing
+                and "gradient_checkpointing_kwargs" in ta_params
+            ):
+                ta_kwargs["gradient_checkpointing_kwargs"] = {
+                    "use_reentrant": False
+                }
+            if "torch_empty_cache_steps" in ta_params:
+                empty_cache_steps = self.config.get("torch_empty_cache_steps")
+                if empty_cache_steps:
+                    ta_kwargs["torch_empty_cache_steps"] = int(empty_cache_steps)
             training_args = TrainingArguments(**ta_kwargs)
         else:
-            training_args = TrainingArguments(
-                output_dir=os.path.join(
+            ta_params = set(inspect.signature(TrainingArguments.__init__).parameters)
+            ta_kwargs = {
+                "output_dir": os.path.join(
                     self.config["results_path"],
                     self.config["simulation_name"],
                     "client_training_output",
                 ),
-                logging_dir=os.path.join(
+                "logging_dir": os.path.join(
                     self.config["results_path"], self.config["simulation_name"], "logs"
                 ),
-                logging_steps=self.config["max_steps"]
-                + 1,  # Avoid logging during training
-                learning_rate=learning_rate,
-                weight_decay=0.01,
-                max_steps=self.config["max_steps"],
-                fp16=True,
-                optim="paged_adamw_8bit",
-                per_device_train_batch_size=self.config["batch_size"],
-                gradient_accumulation_steps=self.config.get(
+                "logging_steps": self.config["max_steps"] + 1,
+                "learning_rate": learning_rate,
+                "weight_decay": 0.01,
+                "max_steps": self.config["max_steps"],
+                "fp16": use_fp16,
+                "bf16": use_bf16,
+                "optim": "paged_adamw_8bit",
+                "per_device_train_batch_size": self.config["batch_size"],
+                "gradient_accumulation_steps": self.config.get(
                     "gradient_accumulation_steps", 1
                 ),
-                lr_scheduler_type=self.config.get(
+                "lr_scheduler_type": self.config.get(
                     "trainer_lr_scheduler_type", self.config["lr_scheduler_type"]
                 ),
-                warmup_ratio=float(self.config.get("warmup_ratio", 0.0)),
-                max_grad_norm=float(self.config.get("max_grad_norm", 1.0)),
-                save_strategy="no",  # We save manually
-            )
+                "warmup_ratio": float(self.config.get("warmup_ratio", 0.0)),
+                "max_grad_norm": float(self.config.get("max_grad_norm", 1.0)),
+                "save_strategy": "no",
+            }
+            if "gradient_checkpointing" in ta_params:
+                ta_kwargs["gradient_checkpointing"] = use_gradient_checkpointing
+            if (
+                use_gradient_checkpointing
+                and "gradient_checkpointing_kwargs" in ta_params
+            ):
+                ta_kwargs["gradient_checkpointing_kwargs"] = {
+                    "use_reentrant": False
+                }
+            if "torch_empty_cache_steps" in ta_params:
+                empty_cache_steps = self.config.get("torch_empty_cache_steps")
+                if empty_cache_steps:
+                    ta_kwargs["torch_empty_cache_steps"] = int(empty_cache_steps)
+            training_args = TrainingArguments(**ta_kwargs)
 
         legacy_eval_enabled = False
         if legacy_training_args:
@@ -271,6 +305,10 @@ class ClientTrainer:
             tokenizer = AutoTokenizer.from_pretrained(
                 self.model_name, **hf_from_pretrained_kwargs(self.config)
             )
+            if use_gradient_checkpointing and hasattr(
+                model, "gradient_checkpointing_enable"
+            ):
+                model.gradient_checkpointing_enable()
             data_collator = DataCollatorForLanguageModeling(
                 tokenizer=tokenizer,
                 mlm=True,
@@ -297,6 +335,12 @@ class ClientTrainer:
                 self.model_name, **hf_from_pretrained_kwargs(self.config)
             )
             tokenizer.pad_token = tokenizer.eos_token
+            if use_gradient_checkpointing and hasattr(
+                model, "gradient_checkpointing_enable"
+            ):
+                model.gradient_checkpointing_enable()
+            if hasattr(model, "config") and hasattr(model.config, "use_cache"):
+                model.config.use_cache = False
 
             # Legacy mode: don't use data_collator (like original utils.py)
             use_legacy_trainer = self.config.get("use_legacy_trainer", False)

@@ -17,6 +17,8 @@ model_name: "bert-base-uncased"
 model_family: "masked_lm"
 masked_lm: true
 lora: false
+huggingface_note: "Use low_cpu_mem_usage to reduce RAM peaks during repeated model loads."
+hf_low_cpu_mem_usage: true
 mlm_probability: 0.65
 eval_mask_ratio: 0.65
 

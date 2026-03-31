@@ -30,6 +30,7 @@ def hf_from_pretrained_kwargs(config: dict[str, Any]) -> dict[str, Any]:
     Supported config keys:
       - hf_cache_dir: str | None
       - hf_local_files_only: bool | None
+      - hf_low_cpu_mem_usage: bool | None
       - hf_offline: bool (implies local_files_only)
     """
     offline = bool(config.get("hf_offline", False))
@@ -40,8 +41,10 @@ def hf_from_pretrained_kwargs(config: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {
         "local_files_only": bool(local_only),
     }
+    low_cpu_mem_usage = config.get("hf_low_cpu_mem_usage")
+    if low_cpu_mem_usage is not None:
+        out["low_cpu_mem_usage"] = bool(low_cpu_mem_usage)
     cache_dir = config.get("hf_cache_dir")
     if cache_dir:
         out["cache_dir"] = str(cache_dir)
     return out
-
